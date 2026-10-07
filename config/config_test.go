@@ -49,3 +49,60 @@ func TestDefaultOpenMeteoHasNoAPIKey(t *testing.T) {
 		t.Errorf("default should use the free API: %+v", c.OpenMeteo)
 	}
 }
+
+func TestUnpackElasticsearch(t *testing.T) {
+	raw, err := config.NewConfigFrom(`
+elasticsearch:
+  hosts: ["https://es1:9200", "https://es2:9200"]
+  username: tropobeat
+  password: changeme
+  ca_cert: /etc/tropobeat/ca.pem
+lrf_index: my-lrfs
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c := DefaultConfig
+	if err := raw.Unpack(&c); err != nil {
+		t.Fatal(err)
+	}
+
+	es := c.Elasticsearch
+	if !slices.Equal(es.Hosts, []string{"https://es1:9200", "https://es2:9200"}) {
+		t.Errorf("hosts = %v", es.Hosts)
+	}
+	if es.Username != "tropobeat" || es.Password != "changeme" || es.CACert != "/etc/tropobeat/ca.pem" {
+		t.Errorf("credentials not unpacked: %+v", es)
+	}
+	if c.LRFIndex != "my-lrfs" {
+		t.Errorf("lrf_index = %q, want my-lrfs", c.LRFIndex)
+	}
+}
+
+func TestDefaultElasticsearch(t *testing.T) {
+	c := DefaultConfig
+	if err := config.NewConfig().Unpack(&c); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(c.Elasticsearch.Hosts, []string{"http://localhost:9200"}) {
+		t.Errorf("hosts = %v, want localhost default", c.Elasticsearch.Hosts)
+	}
+	if c.LRFIndex != "lrf-coordinates" {
+		t.Errorf("lrf_index = %q, want lrf-coordinates", c.LRFIndex)
+	}
+}
+
+func TestUnpackDoesNotModifyDefaults(t *testing.T) {
+	raw, err := config.NewConfigFrom(`elasticsearch.hosts: ["https://other:9200"]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := DefaultConfig
+	if err := raw.Unpack(&c); err != nil {
+		t.Fatal(err)
+	}
+	if got := DefaultConfig.Elasticsearch.Hosts; !slices.Equal(got, []string{"http://localhost:9200"}) {
+		t.Fatalf("unpacking modified DefaultConfig hosts: %v", got)
+	}
+}

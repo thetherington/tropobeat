@@ -13,19 +13,23 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// Config holds Elasticsearch connection settings.
+// Config holds Elasticsearch connection settings. It can be set from CLI
+// flags (AddFlags) or unpacked from the beat configuration.
 type Config struct {
-	Hosts    []string
-	Username string
-	Password string
-	APIKey   string
-	CACert   string
-	Insecure bool
+	Hosts    []string `config:"hosts"`
+	Username string   `config:"username"`
+	Password string   `config:"password"`
+	APIKey   string   `config:"api_key"`
+	CACert   string   `config:"ca_cert"`
+	Insecure bool     `config:"insecure"`
 }
+
+// DefaultHosts is the default Elasticsearch address.
+var DefaultHosts = []string{"http://localhost:9200"}
 
 // AddFlags registers the connection flags on fs, storing values in cfg.
 func AddFlags(fs *pflag.FlagSet, cfg *Config) {
-	fs.StringSliceVar(&cfg.Hosts, "es-host", []string{"http://localhost:9200"}, "Elasticsearch host URL (repeatable)")
+	fs.StringSliceVar(&cfg.Hosts, "es-host", DefaultHosts, "Elasticsearch host URL (repeatable)")
 	fs.StringVar(&cfg.Username, "es-username", "", "Elasticsearch username")
 	fs.StringVar(&cfg.Password, "es-password", "", "Elasticsearch password")
 	fs.StringVar(&cfg.APIKey, "es-api-key", "", "Elasticsearch API key (base64 encoded id:api_key)")

@@ -68,8 +68,9 @@ The prototype is `scripts/Meteo_Script.py`.
 | Profile contents | ✅ | 8 pressure levels (1000, 975, 950, 925, 900, 850, 800, 700 hPa) × temperature, RH and geopotential height, plus a surface level (2 m temperature and RH, surface pressure, terrain elevation). 27 variables in total. The surface level and 700 hPa were added beyond the script (see Decisions). |
 | `openmeteo` section in `tropobeat.yml` | ✅ | `api_key` (commercial plans; switches to `customer-api.open-meteo.com`; keystore recommended), `url`, `models`, `pressure_levels`, `batch_size`, `forecast_days`, `timeout`, `batch_delay`, `max_retries`. The key is redacted from errors. A key combined with the free host is rejected. |
 | Regenerate generated assets (`mage update`) | ✅ | `tropobeat.yml` and `tropobeat.reference.yml` regenerated from `_meta/config/*.tmpl`. `include/fields.go` was already current. |
-| Coordinate source: the 211 LRFs | ⏳ | Read from the `lrf-coordinates` index (or the CSV) and feed into `Profiles`. |
-| Replace the template counter loop in `beater/tropobeat.go` | ⏳ | Scheduled poller that calls `openmeteo.Profiles` each period and publishes the profiles. |
+| Coordinate source: the 211 LRFs | ✅ | The beat creates an Elasticsearch client from the new `tropobeat.elasticsearch` config (hosts, username/password or API key, CA cert) and loads every LRF from `lrf_index` (default `lrf-coordinates`) at start-up via `lrf.Load` / `elastic.SearchAll`. It stops with a clear error if the cluster is unreachable, the index is missing, or the index is empty. Verified end-to-end: 211 sites loaded. |
+| Open-Meteo client created in the beat | ✅ | `openmeteo.New(config.OpenMeteo)` in `beater.New`, so config errors stop the beat at start-up. Not yet called. |
+| Replace the template counter loop in `beater/tropobeat.go` | ⏳ | Scheduled poller that converts the loaded LRFs to coordinates, calls `openmeteo.Profiles` each period and publishes the profiles. |
 | Stale-data fallback | 📋 | Following the script: on API failure, reuse the last snapshot for up to 3 h and mark the data as cached. |
 | Weather index and mapping | 📋 | Raw profiles per coordinate and hour, with a `geo_point` location, strict mapping. |
 | API call budget | 📋 | 27 variables = 2.7 calls per batch request under Open-Meteo's counting rule (each 10 variables counts as one call). Size the poll interval and batches to the plan's limits (Q8, Q9). |
@@ -162,12 +163,15 @@ A separate package that consumes `openmeteo.Profile` values. Pure functions, wit
 | 2026-10-07 | `beater/openmeteo` is data-only; all ducting calculations live in `beater/ducting` (Phase 3) | Keeps the API client simple and testable, and the physics in pure, separately tested functions. |
 | 2026-10-07 | Profiles include the surface level and 700 hPa in addition to the script's 1000–800 hPa levels | A live check showed Open-Meteo extrapolates levels below the terrain (Denver: 1000 hPa at 110 m, 26.8 °C, vs a real 2 m temperature of 11.1 °C). The surface level captures the layer where TV-relevant ducts form, and 700 hPa gives mountain sites at least one gradient. |
 | 2026-10-07 | Phases reordered: Open-Meteo is Phase 1, FCC transmitters Phase 2, ducting calculation Phase 3 | The weather pipeline can be built and tested independently of the FCC data, which is blocked on Q1 and Q2. |
+| 2026-10-07 | The beat reads reference data through its own `tropobeat.elasticsearch` settings, separate from `output.elasticsearch` | The cluster holding reference data may differ from where events are published, and reference reads may need different credentials. The same `elastic` package backs both the beat and the `insert` CLI flags. |
+| 2026-10-07 | LRF sites are loaded once at beat start-up | The list changes rarely (via `insert lrfcoordinates`); restart the beat to pick up changes. Periodic reload can be added if needed. |
 
 ## 6. Known issues / tech debt
 
 - Source CSV quirks handled in code: Latin-1 encoding, 11 ZIP codes missing leading zeros, a leading space in one coordinate. Fixing them at the source would be cleaner.
 - Elasticsearch authentication options untested against a secured cluster.
 - Development uses the free Open-Meteo API, which is non-commercial only. Production needs a commercial key (Q8).
+- `elastic.SearchAll` returns at most 10,000 documents (a single search) and errors beyond that. Fine for the 211 LRFs; larger reference sets (e.g. FCC facilities in Phase 2) may need point-in-time paging.
 
 ## 7. Change log
 
@@ -176,3 +180,4 @@ A separate package that consumes `openmeteo.Profile` values. Pure functions, wit
 | 2026-10-07 | Plan created. Phase 0 recorded as complete: rename, `insert` CLI framework, `elastic/` package, LRF model and `insert lrfcoordinates` with `geo_point` mapping. |
 | 2026-10-07 | Phase 0 committed to `master`, including the LRF CSV and this plan. Q6 resolved. |
 | 2026-10-07 | Weather source set to Open-Meteo. Phases reordered: Phase 1 Open-Meteo, Phase 2 FCC transmitters, new Phase 3 ducting calculation (`beater/ducting`); later phases renumbered 4–8. Built `beater/openmeteo` and the `openmeteo` config section, and ran `mage update`. Q3 resolved; Q8–Q10 added. |
+| 2026-10-07 | Git history squashed to a single commit (removes a 124 MB binary from history before the first push). The beat now creates an Elasticsearch client (`tropobeat.elasticsearch`, `lrf_index`) and loads all LRF sites at start-up, and creates the Open-Meteo client. |

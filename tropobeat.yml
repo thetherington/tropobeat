@@ -6,6 +6,20 @@ tropobeat:
   # Defines how often an event is sent to the output
   period: 1s
 
+  # Elasticsearch cluster that tropobeat reads reference data from (the LRF
+  # sites loaded with `tropobeat insert lrfcoordinates`). This is separate
+  # from the output where events are published.
+  elasticsearch:
+    hosts: ["http://10.9.0.69:9200"]
+    # Store credentials in the keystore rather than in this file:
+    #   tropobeat keystore add ES_PASSWORD
+    #username: "tropobeat"
+    #password: "${ES_PASSWORD}"
+    #api_key: "${ES_API_KEY}"
+
+  # Index holding the LRF sites.
+  #lrf_index: "lrf-coordinates"
+
   # Open-Meteo weather API (https://open-meteo.com).
   openmeteo:
     # API key for Open-Meteo commercial plans. Leave unset to use the free

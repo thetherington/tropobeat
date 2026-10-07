@@ -38,7 +38,7 @@ func NewCmd() *cobra.Command {
 	}
 
 	c.Flags().StringVarP(&opts.file, "file", "f", "", "path to the LRF coordinates input file")
-	c.Flags().StringVarP(&opts.index, "index", "i", "lrf-coordinates", "Elasticsearch index to insert into")
+	c.Flags().StringVarP(&opts.index, "index", "i", lrf.DefaultIndex, "Elasticsearch index to insert into")
 	c.Flags().BoolVar(&opts.recreate, "recreate", false, "delete and recreate the index before inserting")
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "parse the file and print the records without inserting")
 	elastic.AddFlags(c.Flags(), &opts.es)

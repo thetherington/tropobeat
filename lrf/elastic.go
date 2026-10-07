@@ -1,5 +1,16 @@
 package lrf
 
+import (
+	"context"
+
+	"github.com/elastic/go-elasticsearch/v8"
+
+	"github.com/thetherington/tropobeat/elastic"
+)
+
+// DefaultIndex is the default Elasticsearch index for LRF sites.
+const DefaultIndex = "lrf-coordinates"
+
 // IndexBody is the settings and mappings used to create the LRF index.
 // Coordinates are stored as a geo_point in the "location" field.
 const IndexBody = `{
@@ -48,4 +59,32 @@ func (l LRF) Document() Document {
 		Location: GeoPoint{Lat: l.Latitude, Lon: l.Longitude},
 		GPSDMS:   l.GPSDMS,
 	}
+}
+
+// LRF converts an Elasticsearch document back to an LRF.
+func (d Document) LRF() LRF {
+	return LRF{
+		DMAName:   d.DMAName,
+		Code:      d.Code,
+		Street:    d.Street,
+		City:      d.City,
+		State:     d.State,
+		ZipCode:   d.ZipCode,
+		Latitude:  d.Location.Lat,
+		Longitude: d.Location.Lon,
+		GPSDMS:    d.GPSDMS,
+	}
+}
+
+// Load returns every LRF stored in index.
+func Load(ctx context.Context, client *elasticsearch.Client, index string) ([]LRF, error) {
+	docs, err := elastic.SearchAll[Document](ctx, client, index)
+	if err != nil {
+		return nil, err
+	}
+	lrfs := make([]LRF, len(docs))
+	for i, d := range docs {
+		lrfs[i] = d.LRF()
+	}
+	return lrfs, nil
 }
