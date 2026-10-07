@@ -1,0 +1,43 @@
+################### {Beat} Configuration Example #########################
+
+############################# {Beat} ######################################
+
+tropobeat:
+  # Defines how often an event is sent to the output
+  period: 1s
+
+  # Open-Meteo weather API (https://open-meteo.com).
+  openmeteo:
+    # API key for Open-Meteo commercial plans. Leave unset to use the free
+    # API, which is for non-commercial use only. When set, requests go to
+    # customer-api.open-meteo.com. Store the key in the keystore rather than
+    # in this file:
+    #   tropobeat keystore add OPENMETEO_API_KEY
+    #api_key: "${OPENMETEO_API_KEY}"
+
+    # Override the API endpoint, e.g. for a self-hosted Open-Meteo instance.
+    # Defaults to https://api.open-meteo.com/v1/forecast, or
+    # https://customer-api.open-meteo.com/v1/forecast when api_key is set.
+    #url: ""
+
+    # Weather models to query. Empty uses Open-Meteo's best_match.
+    #models: []
+
+    # Pressure levels (hPa) requested for each atmospheric profile, in
+    # addition to the surface (2 m temperature/humidity, surface pressure).
+    #pressure_levels: [1000, 975, 950, 925, 900, 850, 800, 700]
+
+    # Number of coordinates sent in each API request.
+    #batch_size: 50
+
+    # Days of hourly forecast data to request.
+    #forecast_days: 1
+
+    # Timeout for each API request.
+    #timeout: 10s
+
+    # Pause between batch requests.
+    #batch_delay: 100ms
+
+    # Retries after a rate-limit (429), server (5xx) or network error.
+    #max_retries: 2

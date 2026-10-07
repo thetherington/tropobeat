@@ -1,0 +1,18 @@
+[Unit]
+Description=Tropobeat Tropospheric Ducting & Telemetry Correlation Engine.
+Documentation=https://github.com/thetherington/tropobeat
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=insite
+Environment="GODEBUG='madvdontneed=1'"
+Environment="BEAT_LOG_OPTS="
+Environment="BEAT_CONFIG_OPTS=-c /opt/packages/tropobeat/tropobeat.yml"
+Environment="BEAT_PATH_OPTS=--path.home /opt/packages/tropobeat --path.data /opt/packages/tropobeat/data/ --path.logs /opt/packages/tropobeat/logs/"
+WorkingDirectory=/opt/packages/tropobeat
+ExecStart=/opt/packages/tropobeat/tropobeat $BEAT_LOG_OPTS $BEAT_CONFIG_OPTS $BEAT_PATH_OPTS
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

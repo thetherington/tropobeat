@@ -1,0 +1,19 @@
+################### {Beat} Configuration Example #########################
+
+############################# {Beat} ######################################
+
+tropobeat:
+  # Defines how often an event is sent to the output
+  period: 1s
+
+  # Open-Meteo weather API (https://open-meteo.com).
+  openmeteo:
+    # API key for Open-Meteo commercial plans. Leave unset to use the free
+    # API, which is for non-commercial use only. When set, requests go to
+    # customer-api.open-meteo.com. Store the key in the keystore rather than
+    # in this file:
+    #   tropobeat keystore add OPENMETEO_API_KEY
+    #api_key: "${OPENMETEO_API_KEY}"
+
+    # Override the API endpoint, e.g. for a self-hosted Open-Meteo instance.
+    #url: ""
