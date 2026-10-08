@@ -55,6 +55,14 @@ type Client interface {
 	// coordinate for the UTC hour containing at. Error handling is the same
 	// as for Hourly.
 	Profiles(ctx context.Context, coords []Coordinate, at time.Time) ([]Profile, error)
+
+	// GroupProfiles fetches profiles for every point of every group and
+	// returns them regrouped, one GroupProfile per input group in input
+	// order. Coordinates from all groups are deduplicated and batched
+	// together, so points shared between groups are fetched once. A point
+	// whose weather could not be fetched has a nil Profile, and the reason
+	// is reported in the returned error.
+	GroupProfiles(ctx context.Context, groups []Group, at time.Time) ([]GroupProfile, error)
 }
 
 // Config configures a Client. It can be unpacked from the beat configuration.

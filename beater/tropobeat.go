@@ -2,13 +2,13 @@ package beater
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
 	"github.com/elastic/elastic-agent-libs/config"
 	"github.com/elastic/elastic-agent-libs/logp"
-	"github.com/elastic/elastic-agent-libs/mapstr"
 	"github.com/elastic/go-elasticsearch/v8"
 
 	"github.com/thetherington/tropobeat/beater/openmeteo"
@@ -81,26 +81,33 @@ func (bt *tropobeat) Run(b *beat.Beat) error {
 	}
 	bt.logger.Infof("Loaded %d LRF sites from index %s", len(bt.lrfs), bt.config.LRFIndex)
 
+	// test the first lrf co-ordinate with the Open-Meteo client.
+	if len(bt.lrfs) > 0 {
+		coord := openmeteo.Coordinate{Lat: bt.lrfs[0].Latitude, Lon: bt.lrfs[0].Longitude}
+		bt.logger.Infof("Testing Open-Meteo client with first LRF site: %+v", coord)
+		data, err := bt.weather.Profiles(bt.ctx, []openmeteo.Coordinate{coord}, time.Now())
+		if err != nil {
+			bt.logger.Errorf("Error testing Open-Meteo client with first LRF site: %v", err)
+		} else {
+			bt.logger.Infof("Received weather data for first LRF site: %+v", data)
+			jsonData, err := json.Marshal(data)
+			if err != nil {
+				bt.logger.Errorf("Error marshaling weather data for first LRF site: %v", err)
+			} else {
+				bt.logger.Infof("Weather data JSON for first LRF site: %s", string(jsonData))
+			}
+		}
+	}
+
 	ticker := time.NewTicker(bt.config.Period)
 	defer ticker.Stop()
-	counter := 1
+
 	for {
 		select {
 		case <-bt.ctx.Done():
 			return nil
 		case <-ticker.C:
 		}
-
-		event := beat.Event{
-			Timestamp: time.Now(),
-			Fields: mapstr.M{
-				"type":    b.Info.Name,
-				"counter": counter,
-			},
-		}
-		bt.client.Publish(event)
-		bt.logger.Info("Event sent")
-		counter++
 	}
 }
 

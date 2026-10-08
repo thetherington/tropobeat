@@ -61,6 +61,7 @@ func run(cmd *cobra.Command, opts *options) error {
 		return printTable(cmd, lrfs)
 	}
 
+	opts.es.ApplyEnv()
 	client, err := elastic.NewClient(opts.es)
 	if err != nil {
 		return err

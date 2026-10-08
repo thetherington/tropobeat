@@ -4,6 +4,7 @@ package insert
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/thetherington/tropobeat/cmd/insert/fcctransmitters"
 	"github.com/thetherington/tropobeat/cmd/insert/lrfcoordinates"
 )
 
@@ -15,6 +16,7 @@ func NewCmd() *cobra.Command {
 	}
 
 	c.AddCommand(lrfcoordinates.NewCmd())
+	c.AddCommand(fcctransmitters.NewCmd())
 
 	return c
 }

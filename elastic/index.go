@@ -131,3 +131,33 @@ func BulkIndex(ctx context.Context, client *elasticsearch.Client, index string, 
 
 	return stats, nil
 }
+
+// DeleteByQuery deletes the documents in index matching query (a JSON
+// query clause, e.g. {"range":{...}}) and returns how many were deleted.
+func DeleteByQuery(ctx context.Context, client *elasticsearch.Client, index, query string) (int64, error) {
+	res, err := client.DeleteByQuery([]string{index},
+		strings.NewReader(`{"query":`+query+`}`),
+		client.DeleteByQuery.WithContext(ctx),
+		client.DeleteByQuery.WithRefresh(true),
+		client.DeleteByQuery.WithConflicts("proceed"),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("deleting from %s: %w", index, err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return 0, fmt.Errorf("deleting from %s: %s", index, res.String())
+	}
+
+	var body struct {
+		Deleted  int64             `json:"deleted"`
+		Failures []json.RawMessage `json:"failures"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		return 0, fmt.Errorf("decoding delete response from %s: %w", index, err)
+	}
+	if len(body.Failures) > 0 {
+		return body.Deleted, fmt.Errorf("deleting from %s: %d failures, first: %s", index, len(body.Failures), body.Failures[0])
+	}
+	return body.Deleted, nil
+}

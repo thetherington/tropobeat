@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/spf13/pflag"
@@ -27,14 +28,41 @@ type Config struct {
 // DefaultHosts is the default Elasticsearch address.
 var DefaultHosts = []string{"http://localhost:9200"}
 
+// Environment variables read by AddFlags and ApplyEnv, so that scheduled
+// jobs (e.g. cron) don't need credentials on the command line.
+const (
+	EnvHosts    = "ES_HOSTS" // comma-separated
+	EnvUsername = "ES_USERNAME"
+	EnvPassword = "ES_PASSWORD"
+	EnvAPIKey   = "ES_API_KEY"
+)
+
 // AddFlags registers the connection flags on fs, storing values in cfg.
+// Hosts and username default to ES_HOSTS and ES_USERNAME when set. Secrets
+// are not used as flag defaults (they would appear in --help); call
+// ApplyEnv after parsing to read ES_PASSWORD and ES_API_KEY.
 func AddFlags(fs *pflag.FlagSet, cfg *Config) {
-	fs.StringSliceVar(&cfg.Hosts, "es-host", DefaultHosts, "Elasticsearch host URL (repeatable)")
-	fs.StringVar(&cfg.Username, "es-username", "", "Elasticsearch username")
-	fs.StringVar(&cfg.Password, "es-password", "", "Elasticsearch password")
-	fs.StringVar(&cfg.APIKey, "es-api-key", "", "Elasticsearch API key (base64 encoded id:api_key)")
+	hosts := DefaultHosts
+	if v := os.Getenv(EnvHosts); v != "" {
+		hosts = strings.Split(v, ",")
+	}
+	fs.StringSliceVar(&cfg.Hosts, "es-host", hosts, "Elasticsearch host URL (repeatable; env "+EnvHosts+")")
+	fs.StringVar(&cfg.Username, "es-username", os.Getenv(EnvUsername), "Elasticsearch username (env "+EnvUsername+")")
+	fs.StringVar(&cfg.Password, "es-password", "", "Elasticsearch password (env "+EnvPassword+")")
+	fs.StringVar(&cfg.APIKey, "es-api-key", "", "Elasticsearch API key, base64 encoded id:api_key (env "+EnvAPIKey+")")
 	fs.StringVar(&cfg.CACert, "es-ca-cert", "", "path to a PEM CA certificate to trust")
 	fs.BoolVar(&cfg.Insecure, "es-insecure", false, "skip TLS certificate verification")
+}
+
+// ApplyEnv fills an empty password or API key from ES_PASSWORD or
+// ES_API_KEY.
+func (c *Config) ApplyEnv() {
+	if c.Password == "" {
+		c.Password = os.Getenv(EnvPassword)
+	}
+	if c.APIKey == "" {
+		c.APIKey = os.Getenv(EnvAPIKey)
+	}
 }
 
 // NewClient creates a client from cfg and verifies the cluster is reachable.
