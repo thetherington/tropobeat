@@ -2,10 +2,12 @@ package lrf
 
 import (
 	"context"
+	"slices"
+	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8"
 
-	"github.com/thetherington/tropobeat/elastic"
+	"github.com/thetherington/tropobeat/internal/elastic"
 )
 
 // DefaultIndex is the default Elasticsearch index for LRF sites.
@@ -87,4 +89,33 @@ func Load(ctx context.Context, client *elasticsearch.Client, index string) ([]LR
 		lrfs[i] = d.LRF()
 	}
 	return lrfs, nil
+}
+
+// Select returns the LRFs whose codes are in codes (case-insensitive), and
+// the requested codes that matched no LRF. An empty codes list selects all
+// LRFs.
+func Select(lrfs []LRF, codes []string) (selected []LRF, unknown []string) {
+	if len(codes) == 0 {
+		return lrfs, nil
+	}
+	want := make(map[string]bool, len(codes))
+	for _, c := range codes {
+		if c = strings.ToUpper(strings.TrimSpace(c)); c != "" {
+			want[c] = false
+		}
+	}
+	for _, l := range lrfs {
+		code := strings.ToUpper(l.Code)
+		if _, ok := want[code]; ok {
+			selected = append(selected, l)
+			want[code] = true
+		}
+	}
+	for c, found := range want {
+		if !found {
+			unknown = append(unknown, c)
+		}
+	}
+	slices.Sort(unknown)
+	return selected, unknown
 }

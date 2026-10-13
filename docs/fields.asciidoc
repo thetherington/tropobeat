@@ -15671,18 +15671,468 @@ type: text
 [[exported-fields-tropobeat]]
 == tropobeat fields
 
-None
+Fields published by tropobeat: co-channel paths (metricset cochannel) and the weather along them (metricset weather).
 
 
-*`counter`*::
+
+
+*`metricset.name`*::
 +
 --
-PLEASE UPDATE DOCUMENTATION
+The kind of event: cochannel or weather.
 
 
-type: long
+type: keyword
 
-required: True
+--
+
+[float]
+=== tropobeat.cochannel
+
+A co-channel path found by the daily discovery run: an LRF, a same-channel FCC transmitter within the search radius that is not the LRF's own station, and the geodesic midpoint between them.
+
+
+
+*`tropobeat.cochannel.run_id`*::
++
+--
+Discovery run this path belongs to. Use the latest run.
+
+type: keyword
+
+--
+
+*`tropobeat.cochannel.path_id`*::
++
+--
+Path identifier, "<lrf code>:<facility id>:<rf channel>".
+
+type: keyword
+
+--
+
+*`tropobeat.cochannel.rf_channel`*::
++
+--
+The RF channel shared by the LRF and the transmitter.
+
+type: integer
+
+--
+
+
+*`tropobeat.cochannel.lrf.code`*::
++
+--
+LRF code.
+
+type: keyword
+
+--
+
+*`tropobeat.cochannel.lrf.location`*::
++
+--
+LRF location.
+
+type: geo_point
+
+--
+
+*`tropobeat.cochannel.lrf.call_signs`*::
++
+--
+Call signs the LRF receives on this channel (from demod input tags).
+
+type: keyword
+
+--
+
+
+*`tropobeat.cochannel.transmitter.call_sign`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.cochannel.transmitter.facility_id`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.cochannel.transmitter.service`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.cochannel.transmitter.erp_kw`*::
++
+--
+Effective radiated power, kW.
+
+type: float
+
+--
+
+*`tropobeat.cochannel.transmitter.location`*::
++
+--
+Transmitter location.
+
+type: geo_point
+
+--
+
+
+*`tropobeat.cochannel.midpoint.location`*::
++
+--
+Geodesic midpoint of the path (WGS84).
+
+type: geo_point
+
+--
+
+*`tropobeat.cochannel.distance_mi`*::
++
+--
+Geodesic length of the path, statute miles.
+
+type: float
+
+--
+
+*`tropobeat.cochannel.bearing_deg`*::
++
+--
+Initial bearing from the LRF to the transmitter, degrees from north.
+
+type: float
+
+--
+
+*`tropobeat.cochannel.path`*::
++
+--
+The path as a GeoJSON LineString (LRF, midpoint, transmitter), so Kibana Maps can draw it.
+
+
+type: geo_shape
+
+--
+
+[float]
+=== tropobeat.weather
+
+Weather from Open-Meteo for one co-channel path (its LRF, midpoint and transmitter), or for an LRF that has no co-channel paths.
+
+
+
+*`tropobeat.weather.run_id`*::
++
+--
+Discovery run the path came from.
+
+type: keyword
+
+--
+
+*`tropobeat.weather.path_id`*::
++
+--
+Path identifier, or the LRF code for an LRF without paths.
+
+type: keyword
+
+--
+
+*`tropobeat.weather.lrf_code`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.weather.rf_channel`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.weather.transmitter_call_sign`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.weather.forecast_time`*::
++
+--
+The hour the weather applies to.
+
+type: date
+
+--
+
+
+*`tropobeat.weather.lrf.location`*::
++
+--
+type: geo_point
+
+--
+
+*`tropobeat.weather.lrf.elevation_m`*::
++
+--
+Terrain elevation, metres.
+
+type: float
+
+--
+
+
+*`tropobeat.weather.lrf.surface.pressure_hpa`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.height_m`*::
++
+--
+Height above sea level, metres.
+
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.temperature_k`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.relative_humidity_pct`*::
++
+--
+type: float
+
+--
+
+[float]
+=== levels
+
+Pressure levels in increasing height (an array). Levels below the terrain are included as returned by Open-Meteo.
+
+
+
+*`tropobeat.weather.lrf.surface.pressure_hpa`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.height_m`*::
++
+--
+Height above sea level, metres.
+
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.temperature_k`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.relative_humidity_pct`*::
++
+--
+type: float
+
+--
+
+
+*`tropobeat.weather.lrf.location`*::
++
+--
+type: geo_point
+
+--
+
+*`tropobeat.weather.lrf.elevation_m`*::
++
+--
+Terrain elevation, metres.
+
+type: float
+
+--
+
+
+*`tropobeat.weather.lrf.surface.pressure_hpa`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.height_m`*::
++
+--
+Height above sea level, metres.
+
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.temperature_k`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.relative_humidity_pct`*::
++
+--
+type: float
+
+--
+
+[float]
+=== levels
+
+Pressure levels in increasing height (an array). Levels below the terrain are included as returned by Open-Meteo.
+
+
+
+*`tropobeat.weather.lrf.surface.pressure_hpa`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.height_m`*::
++
+--
+Height above sea level, metres.
+
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.temperature_k`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.relative_humidity_pct`*::
++
+--
+type: float
+
+--
+
+
+*`tropobeat.weather.lrf.location`*::
++
+--
+type: geo_point
+
+--
+
+*`tropobeat.weather.lrf.elevation_m`*::
++
+--
+Terrain elevation, metres.
+
+type: float
+
+--
+
+
+*`tropobeat.weather.lrf.surface.pressure_hpa`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.height_m`*::
++
+--
+Height above sea level, metres.
+
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.temperature_k`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.relative_humidity_pct`*::
++
+--
+type: float
+
+--
+
+[float]
+=== levels
+
+Pressure levels in increasing height (an array). Levels below the terrain are included as returned by Open-Meteo.
+
+
+
+*`tropobeat.weather.lrf.surface.pressure_hpa`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.height_m`*::
++
+--
+Height above sea level, metres.
+
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.temperature_k`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.weather.lrf.surface.relative_humidity_pct`*::
++
+--
+type: float
 
 --
 

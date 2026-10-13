@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/thetherington/tropobeat/elastic"
-	"github.com/thetherington/tropobeat/lrf"
+	"github.com/thetherington/tropobeat/internal/elastic"
+	"github.com/thetherington/tropobeat/internal/lrf"
 )
 
 // options holds the flag values for the lrfcoordinates command.

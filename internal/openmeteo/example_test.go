@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"time"
 
-	"github.com/thetherington/tropobeat/beater/openmeteo"
+	"github.com/thetherington/tropobeat/internal/openmeteo"
 )
 
 // exampleServer stands in for the Open-Meteo API so the example is

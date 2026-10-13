@@ -182,3 +182,93 @@ func TestLiveGroups(t *testing.T) {
 		}
 	}
 }
+
+func TestGroupProfilesCoordinatePrecisionMerges(t *testing.T) {
+	// Two midpoints about 300 m apart fall in the same 0.01° cell.
+	near1 := Coordinate{Lat: 41.7031, Lon: -72.8312}
+	near2 := Coordinate{Lat: 41.7044, Lon: -72.8329}
+	groups := []Group{
+		{ID: "a", Points: []Point{{Label: "midpoint", Coordinate: near1}}},
+		{ID: "b", Points: []Point{{Label: "midpoint", Coordinate: near2}}},
+	}
+
+	api := &fakeAPI{t: t}
+	c := newTestClient(t, api, Config{CoordinatePrecision: 0.01})
+	got, err := c.GroupProfiles(context.Background(), groups, testDay)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	q := api.Requests()[0].URL.Query()
+	if q.Get("latitude") != "41.7" || q.Get("longitude") != "-72.83" {
+		t.Errorf("requested %s,%s; want one merged location 41.7,-72.83", q.Get("latitude"), q.Get("longitude"))
+	}
+	for i, g := range got {
+		p := g.Points[0]
+		if p.Profile == nil {
+			t.Fatalf("group %s has no profile", g.ID)
+		}
+		if p.Coordinate != groups[i].Points[0].Coordinate {
+			t.Errorf("group %s: coordinate %v, want original %v", g.ID, p.Coordinate, groups[i].Points[0].Coordinate)
+		}
+	}
+	if got[0].Points[0].Profile != got[1].Points[0].Profile {
+		t.Error("merged points should share one profile")
+	}
+}
+
+func TestGroupProfilesNoPrecisionKeepsBoth(t *testing.T) {
+	api := &fakeAPI{t: t}
+	c := newTestClient(t, api, Config{})
+	groups := []Group{
+		{ID: "a", Points: []Point{{Label: "midpoint", Coordinate: Coordinate{Lat: 41.7031, Lon: -72.8312}}}},
+		{ID: "b", Points: []Point{{Label: "midpoint", Coordinate: Coordinate{Lat: 41.7044, Lon: -72.8329}}}},
+	}
+	if _, err := c.GroupProfiles(context.Background(), groups, testDay); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(strings.Split(api.Requests()[0].URL.Query().Get("latitude"), ",")); n != 2 {
+		t.Errorf("requested %d locations, want 2", n)
+	}
+}
+
+func TestRound(t *testing.T) {
+	tests := []struct {
+		in        Coordinate
+		precision float64
+		want      Coordinate
+	}{
+		{Coordinate{41.7031, -72.8312}, 0, Coordinate{41.7031, -72.8312}},
+		{Coordinate{41.7031, -72.8312}, 0.01, Coordinate{41.7, -72.83}},
+		{Coordinate{-33.8675, 151.2069}, 0.05, Coordinate{-33.85, 151.2}},
+		{Coordinate{0.3, -0.3}, 0.1, Coordinate{0.3, -0.3}},
+		{Coordinate{39.465533, -87.4023442}, 0.01, Coordinate{39.47, -87.4}},
+	}
+	for _, tt := range tests {
+		if got := Round(tt.in, tt.precision); got != tt.want {
+			t.Errorf("Round(%v, %v) = %v, want %v", tt.in, tt.precision, got, tt.want)
+		}
+	}
+	// Symmetric for negative values.
+	if a, b := Round(Coordinate{1.234, 1.234}, 0.01), Round(Coordinate{-1.234, -1.234}, 0.01); a.Lat != -b.Lat || a.Lon != -b.Lon {
+		t.Errorf("rounding not symmetric: %v vs %v", a, b)
+	}
+}
+
+func TestCountUnique(t *testing.T) {
+	coords := []Coordinate{{41.7031, -72.8312}, {41.7044, -72.8329}, {41.7031, -72.8312}, {39.4655, -87.4023}}
+	if n := CountUnique(coords, 0); n != 3 {
+		t.Errorf("exact: %d, want 3", n)
+	}
+	if n := CountUnique(coords, 0.01); n != 2 {
+		t.Errorf("0.01°: %d, want 2", n)
+	}
+}
+
+func TestNewRejectsBadPrecision(t *testing.T) {
+	for _, p := range []float64{-0.01, 1.5} {
+		if _, err := New(Config{CoordinatePrecision: p}); err == nil {
+			t.Errorf("precision %v: expected error", p)
+		}
+	}
+}

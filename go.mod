@@ -33,16 +33,21 @@ require (
 	github.com/elastic/beats/v7 v7.17.29-0.20250528095053-c7b51806263b
 	github.com/elastic/elastic-agent-libs v0.19.6
 	github.com/elastic/go-elasticsearch/v8 v8.17.0
+	github.com/go-co-op/gocron/v2 v2.20.0
 	github.com/magefile/mage v1.15.0
 	github.com/mitchellh/gox v1.0.1
 	github.com/pierrre/gotestcover v0.0.0-20160517101806-924dca7d15f0
+	github.com/tidwall/geodesic v1.52.4
 	github.com/tsg/go-daemon v0.0.0-20200207173439-e704b93fd89b
 	golang.org/x/lint v0.0.0-20241112194109-818c5a804067
 	golang.org/x/tools v0.33.0
 	gotest.tools/gotestsum v1.12.2
 )
 
-require github.com/elastic/elastic-transport-go/v8 v8.6.0 // indirect
+require (
+	github.com/elastic/elastic-transport-go/v8 v8.6.0 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
+)
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.13.0 // indirect
@@ -122,7 +127,7 @@ require (
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
-	github.com/google/uuid v1.6.0 // indirect
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/h2non/filetype v1.1.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -138,7 +143,7 @@ require (
 	github.com/jcmturner/gokrb5/v8 v8.4.4 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	github.com/joeshaw/multierror v0.0.0-20140124173710-69b34d4ec901 // indirect
-	github.com/jonboulle/clockwork v0.2.2 // indirect
+	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/josephspurrier/goversioninfo v1.5.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

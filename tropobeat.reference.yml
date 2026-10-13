@@ -3,8 +3,16 @@
 ############################# {Beat} ######################################
 
 tropobeat:
-  # Defines how often an event is sent to the output
-  period: 1s
+  # How often weather is fetched from Open-Meteo for every co-channel path
+  # point and every LRF without paths. The first poll runs at start-up.
+  # Each poll costs Open-Meteo API calls per location (see the rolling plan,
+  # Q15), so check your plan's limits before shortening it.
+  period: 1h
+
+  # Limit tropobeat to these LRF codes, for limited runs and testing. Only
+  # these LRFs' co-channel paths are discovered and only their weather is
+  # fetched. Empty or unset means all LRFs.
+  #lrf_sites: ["TERH", "PROV"]
 
   # Elasticsearch cluster that tropobeat reads reference data from (the LRF
   # sites loaded with `tropobeat insert lrfcoordinates`). This is separate
@@ -32,8 +40,32 @@ tropobeat:
   # Index holding the LRF sites.
   #lrf_index: "lrf-coordinates"
 
+  # Index pattern holding the demod telemetry, used to find the RF channels
+  # (and call signs) each LRF receives.
+  #demod_index: "log-metric-p-rfdemod-*"
+
+  # Index holding the FCC transmitters loaded with
+  # `tropobeat insert fcctransmitters`. Schedule that import (cron) before
+  # cochannel.schedule, e.g. at 02:00 UTC, so discovery reads a complete list.
+  #fcc_index: "fcc-transmitters"
+
+  # Daily co-channel discovery: for each LRF and received RF channel, find
+  # same-channel transmitters within the radius, excluding the LRF's own
+  # station. Also runs once at start-up.
+  cochannel:
+    # Cron expression, UTC.
+    schedule: "0 3 * * *"
+    # Search radius around each LRF.
+    radius: "200mi"
+    # How far back demod telemetry is read to find each LRF's channels.
+    #demod_window: 24h
+
   # Open-Meteo weather API (https://open-meteo.com).
   openmeteo:
+    # Set to false to turn weather polling off: tropobeat then only runs the
+    # daily co-channel discovery and makes no Open-Meteo calls.
+    #enabled: true
+
     # API key for Open-Meteo commercial plans. Leave unset to use the free
     # API, which is for non-commercial use only. When set, requests go to
     # customer-api.open-meteo.com. Store the key in the keystore rather than
@@ -67,6 +99,12 @@ tropobeat:
 
     # Retries after a rate-limit (429), server (5xx) or network error.
     #max_retries: 2
+
+    # Merge points closer than about this many degrees (rounding before
+    # de-duplication), so nearby path points are fetched once and Open-Meteo
+    # API usage drops. 0.01 is about 1.1 km. Values above 0.1 may merge
+    # points in different weather-model grid cells. 0 = off.
+    #coordinate_precision: 0
 
 # ================================== General ===================================
 

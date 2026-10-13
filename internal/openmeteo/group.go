@@ -59,7 +59,8 @@ func (c *client) GroupProfiles(ctx context.Context, groups []Group, at time.Time
 
 	// Profiles removes duplicates, so points shared between groups (an LRF
 	// with several transmitters, or a transmitter near several LRFs) are
-	// only fetched once.
+	// only fetched once. With CoordinatePrecision set, points are rounded
+	// first, and each point is matched to its profile by the same rounding.
 	profiles, err := c.Profiles(ctx, coords, at)
 
 	byCoord := make(map[Coordinate]*Profile, len(profiles))
@@ -74,7 +75,7 @@ func (c *client) GroupProfiles(ctx context.Context, groups []Group, at time.Time
 			gp.Points[j] = PointProfile{
 				Label:      p.Label,
 				Coordinate: p.Coordinate,
-				Profile:    byCoord[p.Coordinate],
+				Profile:    byCoord[Round(p.Coordinate, c.cfg.CoordinatePrecision)],
 			}
 		}
 		out[i] = gp

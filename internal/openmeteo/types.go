@@ -18,7 +18,8 @@ func (c Coordinate) String() string {
 
 // HourlySeries holds the raw hourly variables returned for one coordinate.
 type HourlySeries struct {
-	// Requested is the coordinate that was asked for.
+	// Requested is the coordinate that was asked for, rounded to
+	// Config.CoordinatePrecision when that is set.
 	Requested Coordinate
 	// Grid is the model grid point Open-Meteo actually used, which is
 	// usually slightly different from Requested.

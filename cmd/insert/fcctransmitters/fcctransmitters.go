@@ -14,8 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/thetherington/tropobeat/elastic"
-	"github.com/thetherington/tropobeat/fcc"
+	"github.com/thetherington/tropobeat/internal/elastic"
+	"github.com/thetherington/tropobeat/internal/fcc"
 )
 
 // options holds the flag values for the fcctransmitters command.

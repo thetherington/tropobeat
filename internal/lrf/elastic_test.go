@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thetherington/tropobeat/elastic"
+	"github.com/thetherington/tropobeat/internal/elastic"
 )
 
 // fakeES serves the cluster info and _search endpoints with the given hits.
@@ -90,5 +90,25 @@ func TestLoadMissingIndex(t *testing.T) {
 
 	if _, err := Load(context.Background(), client, "no-such-index"); err == nil {
 		t.Fatal("expected error for missing index")
+	}
+}
+
+func TestSelect(t *testing.T) {
+	all := []LRF{{Code: "TERH"}, {Code: "PROV"}, {Code: "BOS"}}
+
+	if got, unknown := Select(all, nil); len(got) != 3 || unknown != nil {
+		t.Errorf("empty selection: got %d, unknown %v; want all 3", len(got), unknown)
+	}
+
+	got, unknown := Select(all, []string{"terh", " BOS ", "NOPE", ""})
+	if len(got) != 2 || got[0].Code != "TERH" || got[1].Code != "BOS" {
+		t.Errorf("selected %+v, want TERH and BOS", got)
+	}
+	if len(unknown) != 1 || unknown[0] != "NOPE" {
+		t.Errorf("unknown = %v, want [NOPE]", unknown)
+	}
+
+	if got, unknown := Select(all, []string{"XXXX"}); len(got) != 0 || len(unknown) != 1 {
+		t.Errorf("no valid codes: got %d selected, unknown %v", len(got), unknown)
 	}
 }

@@ -106,3 +106,34 @@ func TestUnpackDoesNotModifyDefaults(t *testing.T) {
 		t.Fatalf("unpacking modified DefaultConfig hosts: %v", got)
 	}
 }
+
+func TestOpenMeteoEnabled(t *testing.T) {
+	c := DefaultConfig
+	if err := config.NewConfig().Unpack(&c); err != nil {
+		t.Fatal(err)
+	}
+	if !c.OpenMeteo.Enabled {
+		t.Error("weather polling should be enabled by default")
+	}
+
+	raw, err := config.NewConfigFrom(`
+openmeteo:
+  enabled: false
+  api_key: secret
+  coordinate_precision: 0.01
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c = DefaultConfig
+	if err := raw.Unpack(&c); err != nil {
+		t.Fatal(err)
+	}
+	if c.OpenMeteo.Enabled {
+		t.Error("enabled: false not applied")
+	}
+	// The client settings sit inline beside enabled.
+	if c.OpenMeteo.APIKey != "secret" || c.OpenMeteo.CoordinatePrecision != 0.01 || c.OpenMeteo.BatchSize != 50 {
+		t.Errorf("inline client settings not unpacked: %+v", c.OpenMeteo.Config)
+	}
+}

@@ -88,6 +88,10 @@ type Config struct {
 	// MaxRetries is the number of retries after a rate-limit (429), server
 	// (5xx) or network error.
 	MaxRetries int `config:"max_retries"`
+	// CoordinatePrecision, in degrees, rounds coordinates before they are
+	// deduplicated, so points within the same weather-model grid cell are
+	// fetched once. Zero (the default) disables rounding.
+	CoordinatePrecision float64 `config:"coordinate_precision"`
 }
 
 // DefaultPressureLevels are used when Config.PressureLevels is empty.
@@ -143,6 +147,8 @@ func New(cfg Config, opts ...Option) (Client, error) {
 		return nil, errors.New("openmeteo: timeout and batch_delay must not be negative")
 	case cfg.MaxRetries < 0:
 		return nil, errors.New("openmeteo: max_retries must not be negative")
+	case cfg.CoordinatePrecision < 0 || cfg.CoordinatePrecision > 1:
+		return nil, errors.New("openmeteo: coordinate_precision must be between 0 and 1 degree")
 	}
 	for _, l := range cfg.PressureLevels {
 		if l <= 0 {
@@ -182,7 +188,7 @@ func (c *client) Hourly(ctx context.Context, coords []Coordinate, vars []string)
 		return nil, errors.New("openmeteo: no variables requested")
 	}
 
-	unique := dedupe(coords)
+	unique := dedupe(coords, c.cfg.CoordinatePrecision)
 	var (
 		results []HourlySeries
 		errs    []error
@@ -364,10 +370,11 @@ func (c *client) redact(err error) error {
 	return err
 }
 
-func dedupe(coords []Coordinate) []Coordinate {
+func dedupe(coords []Coordinate, precision float64) []Coordinate {
 	seen := make(map[Coordinate]struct{}, len(coords))
 	out := make([]Coordinate, 0, len(coords))
 	for _, c := range coords {
+		c = Round(c, precision)
 		if _, ok := seen[c]; ok {
 			continue
 		}
@@ -375,6 +382,27 @@ func dedupe(coords []Coordinate) []Coordinate {
 		out = append(out, c)
 	}
 	return out
+}
+
+// Round rounds c to the nearest multiple of precision degrees. A precision
+// of zero returns c unchanged.
+func Round(c Coordinate, precision float64) Coordinate {
+	if precision <= 0 {
+		return c
+	}
+	return Coordinate{Lat: roundTo(c.Lat, precision), Lon: roundTo(c.Lon, precision)}
+}
+
+// CountUnique returns how many distinct locations coords contains after
+// rounding to precision, i.e. how many locations a request for them costs.
+func CountUnique(coords []Coordinate, precision float64) int {
+	return len(dedupe(coords, precision))
+}
+
+func roundTo(v, precision float64) float64 {
+	r := math.Round(v/precision) * precision
+	// Remove floating-point noise such as 0.30000000000000004.
+	return math.Round(r*1e9) / 1e9
 }
 
 func sleep(ctx context.Context, d time.Duration) error {

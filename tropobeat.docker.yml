@@ -1,5 +1,5 @@
 counterbeat:
-  period: 1s
+  period: 1h
 
 processors:
   - add_cloud_metadata: ~
