@@ -105,3 +105,25 @@ tropobeat:
     # API usage drops. 0.01 is about 1.1 km. Values above 0.1 may merge
     # points in different weather-model grid cells. 0 = off.
     #coordinate_precision: 0
+
+  # Ducting calculation, run on every weather poll (see DUCTING.md).
+  #ducting:
+    # Which locations get a ducting event: "all" (every location on every
+    # poll, including normal ones) or "notable" (only super-refractive and
+    # ducting locations). Weather events carry the ducting summary for
+    # every point either way.
+    #publish: all
+
+    # Pressure levels closer than this many metres to the point below are
+    # dropped, since a tiny height difference makes gradients noisy.
+    #min_layer_m: 20
+
+    # Score bands: the steepest gradient dN/dh (N-units per km) maps to a
+    # score of 0 at super_refractive_n_per_km, ducting_score at
+    # ducting_n_per_km, and 1 at strong_n_per_km. Initial values, to be
+    # calibrated.
+    #score:
+      #super_refractive_n_per_km: -79
+      #ducting_n_per_km: -157
+      #strong_n_per_km: -300
+      #ducting_score: 0.6

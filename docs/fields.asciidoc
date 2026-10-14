@@ -15671,7 +15671,7 @@ type: text
 [[exported-fields-tropobeat]]
 == tropobeat fields
 
-Fields published by tropobeat: co-channel paths (metricset cochannel) and the weather along them (metricset weather).
+Fields published by tropobeat: co-channel paths (metricset cochannel), the weather along them (metricset weather) and the ducting analysis of each weather location (metricset ducting). See DUCTING.md for how ducting results are calculated and read.
 
 
 
@@ -15679,7 +15679,7 @@ Fields published by tropobeat: co-channel paths (metricset cochannel) and the we
 *`metricset.name`*::
 +
 --
-The kind of event: cochannel or weather.
+The kind of event: cochannel, weather or ducting.
 
 
 type: keyword
@@ -15891,6 +15891,87 @@ type: date
 
 --
 
+[float]
+=== ducting
+
+Path ducting summary. Not set for an LRF without paths.
+
+
+
+*`tropobeat.weather.ducting.index`*::
++
+--
+Path ducting index, 0-1: the mean of the usable points' ducting scores.
+
+
+type: float
+
+--
+
+*`tropobeat.weather.ducting.frequency_mhz`*::
++
+--
+Centre frequency of the path's RF channel, MHz.
+
+type: float
+
+--
+
+*`tropobeat.weather.ducting.trapped`*::
++
+--
+True if a duct at any of the path's points is thick enough to trap the channel's frequency.
+
+
+type: boolean
+
+--
+
+
+[float]
+=== ducting
+
+Ducting summary for this point. Not set when the location had too few usable heights to analyse.
+
+
+
+*`tropobeat.weather.lrf.ducting.profile_id`*::
++
+--
+Links to this location's ducting event (tropobeat.ducting.profile_id) from the same poll.
+
+
+type: keyword
+
+--
+
+*`tropobeat.weather.lrf.ducting.score`*::
++
+--
+Ducting likelihood score, 0-1.
+
+type: float
+
+--
+
+*`tropobeat.weather.lrf.ducting.class`*::
++
+--
+Refraction class of the steepest layer: sub_refractive, normal, super_refractive or ducting.
+
+
+type: keyword
+
+--
+
+*`tropobeat.weather.lrf.ducting.min_dndh_n_per_km`*::
++
+--
+Steepest refractivity gradient dN/dh, N-units per km.
+
+type: float
+
+--
 
 *`tropobeat.weather.lrf.location`*::
 +
@@ -15977,6 +16058,51 @@ type: float
 --
 
 
+[float]
+=== ducting
+
+Ducting summary for this point. Not set when the location had too few usable heights to analyse.
+
+
+
+*`tropobeat.weather.lrf.ducting.profile_id`*::
++
+--
+Links to this location's ducting event (tropobeat.ducting.profile_id) from the same poll.
+
+
+type: keyword
+
+--
+
+*`tropobeat.weather.lrf.ducting.score`*::
++
+--
+Ducting likelihood score, 0-1.
+
+type: float
+
+--
+
+*`tropobeat.weather.lrf.ducting.class`*::
++
+--
+Refraction class of the steepest layer: sub_refractive, normal, super_refractive or ducting.
+
+
+type: keyword
+
+--
+
+*`tropobeat.weather.lrf.ducting.min_dndh_n_per_km`*::
++
+--
+Steepest refractivity gradient dN/dh, N-units per km.
+
+type: float
+
+--
+
 *`tropobeat.weather.lrf.location`*::
 +
 --
@@ -16062,6 +16188,51 @@ type: float
 --
 
 
+[float]
+=== ducting
+
+Ducting summary for this point. Not set when the location had too few usable heights to analyse.
+
+
+
+*`tropobeat.weather.lrf.ducting.profile_id`*::
++
+--
+Links to this location's ducting event (tropobeat.ducting.profile_id) from the same poll.
+
+
+type: keyword
+
+--
+
+*`tropobeat.weather.lrf.ducting.score`*::
++
+--
+Ducting likelihood score, 0-1.
+
+type: float
+
+--
+
+*`tropobeat.weather.lrf.ducting.class`*::
++
+--
+Refraction class of the steepest layer: sub_refractive, normal, super_refractive or ducting.
+
+
+type: keyword
+
+--
+
+*`tropobeat.weather.lrf.ducting.min_dndh_n_per_km`*::
++
+--
+Steepest refractivity gradient dN/dh, N-units per km.
+
+type: float
+
+--
+
 *`tropobeat.weather.lrf.location`*::
 +
 --
@@ -16142,6 +16313,281 @@ type: float
 *`tropobeat.weather.lrf.surface.relative_humidity_pct`*::
 +
 --
+type: float
+
+--
+
+[float]
+=== tropobeat.ducting
+
+Ducting analysis of one weather location for one poll: refractivity at each usable height, the gradient of each layer, and any ducts. One event per unique location; weather points link to it by profile_id. See DUCTING.md.
+
+
+
+*`tropobeat.ducting.run_id`*::
++
+--
+Discovery run the paths came from.
+
+type: keyword
+
+--
+
+*`tropobeat.ducting.profile_id`*::
++
+--
+The location the weather was requested for, as "lat,lon" (rounded when coordinate_precision is set).
+
+
+type: keyword
+
+--
+
+*`tropobeat.ducting.forecast_time`*::
++
+--
+The hour the weather applies to.
+
+type: date
+
+--
+
+*`tropobeat.ducting.location`*::
++
+--
+type: geo_point
+
+--
+
+*`tropobeat.ducting.elevation_m`*::
++
+--
+Terrain elevation, metres.
+
+type: float
+
+--
+
+*`tropobeat.ducting.path_ids`*::
++
+--
+Co-channel paths whose weather used this location.
+
+type: keyword
+
+--
+
+*`tropobeat.ducting.lrf_codes`*::
++
+--
+LRFs whose paths (or own weather) used this location.
+
+type: keyword
+
+--
+
+*`tropobeat.ducting.class`*::
++
+--
+Refraction class of the steepest layer: sub_refractive, normal, super_refractive or ducting; insufficient_data when there were fewer than two usable heights.
+
+
+type: keyword
+
+--
+
+*`tropobeat.ducting.score`*::
++
+--
+Ducting likelihood score, 0-1. Not set for insufficient_data.
+
+
+type: float
+
+--
+
+*`tropobeat.ducting.min_dndh_n_per_km`*::
++
+--
+Steepest refractivity gradient dN/dh, N-units per km. Not set for insufficient_data.
+
+
+type: float
+
+--
+
+*`tropobeat.ducting.dropped_levels`*::
++
+--
+Pressure levels left out: below the terrain, under min_layer_m above the point below, or with missing values.
+
+
+type: integer
+
+--
+
+[float]
+=== points
+
+Usable heights, lowest first (an array): the 2 m surface point, then each kept pressure level.
+
+
+
+*`tropobeat.ducting.points.pressure_hpa`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.ducting.points.height_m`*::
++
+--
+Height above sea level, metres.
+
+type: float
+
+--
+
+*`tropobeat.ducting.points.height_agl_m`*::
++
+--
+Height above ground, metres.
+
+type: float
+
+--
+
+*`tropobeat.ducting.points.temperature_k`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.ducting.points.relative_humidity_pct`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.ducting.points.vapour_pressure_hpa`*::
++
+--
+Water vapour pressure e, hPa.
+
+type: float
+
+--
+
+*`tropobeat.ducting.points.refractivity_n`*::
++
+--
+Radio refractivity N, N-units.
+
+type: float
+
+--
+
+*`tropobeat.ducting.points.modified_refractivity_m`*::
++
+--
+Modified refractivity M = N + 0.157 h (h above sea level), M-units.
+
+type: float
+
+--
+
+[float]
+=== layers
+
+The air between consecutive points (an array), lowest first.
+
+
+*`tropobeat.ducting.layers.base_agl_m`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.ducting.layers.top_agl_m`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.ducting.layers.dndh_n_per_km`*::
++
+--
+Refractivity gradient dN/dh, N-units per km.
+
+type: float
+
+--
+
+*`tropobeat.ducting.layers.dmdh_m_per_km`*::
++
+--
+Modified refractivity gradient dM/dh, M-units per km. Negative means ducting.
+
+type: float
+
+--
+
+*`tropobeat.ducting.layers.class`*::
++
+--
+sub_refractive, normal, super_refractive or ducting.
+
+type: keyword
+
+--
+
+[float]
+=== ducts
+
+Ducts found (an array), lowest first; empty when none.
+
+
+*`tropobeat.ducting.ducts.type`*::
++
+--
+surface, surface_based or elevated.
+
+type: keyword
+
+--
+
+*`tropobeat.ducting.ducts.base_agl_m`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.ducting.ducts.top_agl_m`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.ducting.ducts.thickness_m`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.ducting.ducts.delta_m`*::
++
+--
+Duct strength: M at the base of the trapping layer minus M at its top, M-units.
+
+
 type: float
 
 --

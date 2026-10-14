@@ -137,3 +137,37 @@ openmeteo:
 		t.Errorf("inline client settings not unpacked: %+v", c.OpenMeteo.Config)
 	}
 }
+
+func TestUnpackDucting(t *testing.T) {
+	raw, err := config.NewConfigFrom(`
+ducting:
+  publish: notable
+  score:
+    ducting_score: 0.5
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := DefaultConfig
+	if err := raw.Unpack(&c); err != nil {
+		t.Fatal(err)
+	}
+	d := c.Ducting
+	if d.Publish != "notable" || d.Score.DuctingScore != 0.5 {
+		t.Errorf("configured values not unpacked: %+v", d)
+	}
+	if d.MinLayerM != 20 || d.Score.DuctingNPerKm != -157 {
+		t.Errorf("defaults not kept: %+v", d)
+	}
+}
+
+func TestUnpackDuctingRejectsUnknownPublish(t *testing.T) {
+	raw, err := config.NewConfigFrom(`ducting.publish: some`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := DefaultConfig
+	if err := raw.Unpack(&c); err == nil {
+		t.Error("ducting.publish: some should fail validation")
+	}
+}

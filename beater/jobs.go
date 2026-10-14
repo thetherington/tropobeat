@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
 
 	"github.com/thetherington/tropobeat/internal/cochannel"
+	"github.com/thetherington/tropobeat/internal/ducting"
 	"github.com/thetherington/tropobeat/internal/lrf"
 	"github.com/thetherington/tropobeat/internal/openmeteo"
 )
@@ -170,7 +172,9 @@ func filterReceived(received []cochannel.Received, all, selected []lrf.LRF, limi
 }
 
 // runWeather fetches the weather for every co-channel path point and every
-// LRF without paths, and publishes one event per complete group.
+// LRF without paths, runs the ducting analysis once per unique location, and
+// publishes one weather event per complete group plus the ducting events
+// selected by ducting.publish.
 func (bt *tropobeat) runWeather(ctx context.Context) error {
 	// Use the latest snapshot from co-channel discovery. Before the first
 	// successful run there is nothing to poll.
@@ -232,33 +236,111 @@ func (bt *tropobeat) runWeather(ctx context.Context) error {
 	start := time.Now()
 	results, fetchErr := bt.weather.GroupProfiles(ctx, groups, start)
 
-	// Publish one event per group, skipping any group missing the weather
-	// for one of its points, so a path event always has all three points.
-	events := make([]beat.Event, 0, len(results))
+	// Keep only complete groups, so a path event always has all three
+	// points. Work out each group's LRF code: from the path for a path
+	// group (path is non-nil), or the group ID for an LRF-only group.
+	var complete []fetchedGroup
 	incomplete := 0
 	for _, g := range results {
 		if !g.Complete() || len(g.Points) == 0 {
 			incomplete++
 			continue
 		}
-		// Work out the LRF code for the event: from the path for a path
-		// group (p is non-nil), or the group ID for an LRF-only group.
-		code := lrfOnly[g.ID]
-		p := paths[g.ID]
-		if p != nil {
-			code = p.LRFCode
+		fg := fetchedGroup{group: g, lrfCode: lrfOnly[g.ID], path: paths[g.ID]}
+		if fg.path != nil {
+			fg.lrfCode = fg.path.LRFCode
 		}
-		events = append(events, weatherEvent(g, p, code, snap.RunID, start))
+		complete = append(complete, fg)
 	}
+
+	// Analyse each unique location once, even when several paths share it.
+	locs := analyseLocations(complete, bt.config.Ducting)
+
+	// One weather event per group, then the ducting events chosen by
+	// ducting.publish. Both go out in one call.
+	events := make([]beat.Event, 0, len(complete)+len(locs))
+	for _, fg := range complete {
+		events = append(events, weatherEvent(fg.group, fg.path, fg.lrfCode, snap.RunID, start, locs))
+	}
+	weatherCount := len(events)
+	ductEvents, notable, insufficient := ductingEvents(locs, bt.config.Ducting.Publish, snap.RunID, start)
+	events = append(events, ductEvents...)
 	bt.client.PublishAll(events)
 
 	// The request count is unique locations divided by batch size,
 	// rounded up.
-	bt.logger.Infof("Weather poll: %d groups (%d co-channel paths, %d LRF-only); points: %d requested, %d unique after merge, %d requests; %d events published, %d incomplete (%s)",
-		len(groups), len(snap.Paths), len(lrfOnly), len(coords), unique, (unique+batch-1)/batch, len(events), incomplete, time.Since(start).Round(time.Millisecond))
+	bt.logger.Infof("Weather poll: %d groups (%d co-channel paths, %d LRF-only); points: %d requested, %d unique after merge, %d requests; %d weather events published, %d incomplete; %d ducting events published (publish: %s; %d locations, %d notable, %d insufficient data) (%s)",
+		len(groups), len(snap.Paths), len(lrfOnly), len(coords), unique, (unique+batch-1)/batch, weatherCount, incomplete,
+		len(ductEvents), bt.config.Ducting.Publish, len(locs), notable, insufficient, time.Since(start).Round(time.Millisecond))
 
 	if fetchErr != nil {
 		return fmt.Errorf("weather poll: %d of %d groups incomplete: %w", incomplete, len(groups), fetchErr)
 	}
 	return nil
+}
+
+// fetchedGroup is a weather group whose points all have weather, with the
+// path and LRF it belongs to. path is nil for an LRF-only group.
+type fetchedGroup struct {
+	group   openmeteo.GroupProfile
+	path    *cochannel.Path
+	lrfCode string
+}
+
+// analyseLocations runs the ducting analysis once per unique weather
+// location in groups, keyed by profile ID, and records which paths and LRFs
+// used each location.
+func analyseLocations(groups []fetchedGroup, cfg ducting.Config) map[string]*location {
+	locs := map[string]*location{}
+	for _, fg := range groups {
+		for _, pt := range fg.group.Points {
+			id := profileID(pt.Profile)
+			loc := locs[id]
+			if loc == nil {
+				loc = &location{
+					id:       id,
+					coord:    pt.Profile.Requested,
+					profile:  pt.Profile,
+					analysis: ducting.Analyse(*pt.Profile, cfg),
+					pathIDs:  map[string]struct{}{},
+					lrfCodes: map[string]struct{}{},
+				}
+				locs[id] = loc
+			}
+			if fg.path != nil {
+				loc.pathIDs[fg.group.ID] = struct{}{}
+			}
+			if fg.lrfCode != "" {
+				loc.lrfCodes[fg.lrfCode] = struct{}{}
+			}
+		}
+	}
+	return locs
+}
+
+// ductingEvents builds the ducting events for locs, in profile ID order.
+// With publish set to ducting.PublishNotable, only super-refractive and
+// ducting locations get an event. notable and insufficient count every
+// location, whether published or not.
+func ductingEvents(locs map[string]*location, publish, runID string, at time.Time) (events []beat.Event, notable, insufficient int) {
+	ids := make([]string, 0, len(locs))
+	for id := range locs {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		loc := locs[id]
+		a := loc.analysis
+		if a.Notable() {
+			notable++
+		}
+		if !a.Usable() {
+			insufficient++
+		}
+		if publish == ducting.PublishNotable && !a.Notable() {
+			continue
+		}
+		events = append(events, ductingEvent(loc, runID, at))
+	}
+	return events, notable, insufficient
 }

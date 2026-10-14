@@ -1,8 +1,10 @@
 - key: tropobeat
   title: tropobeat
   description: >
-    Fields published by tropobeat: co-channel paths (metricset cochannel) and
-    the weather along them (metricset weather).
+    Fields published by tropobeat: co-channel paths (metricset cochannel), the
+    weather along them (metricset weather) and the ducting analysis of each
+    weather location (metricset ducting). See DUCTING.md for how ducting
+    results are calculated and read.
   fields:
     - name: metricset
       type: group
@@ -10,7 +12,7 @@
         - name: name
           type: keyword
           description: >
-            The kind of event: cochannel or weather.
+            The kind of event: cochannel, weather or ducting.
 
     - name: tropobeat.cochannel
       type: group
@@ -99,9 +101,49 @@
         - name: forecast_time
           type: date
           description: The hour the weather applies to.
+        - name: ducting
+          type: group
+          description: >
+            Path ducting summary. Not set for an LRF without paths.
+          fields:
+            - name: index
+              type: float
+              description: >
+                Path ducting index, 0-1: the mean of the usable points'
+                ducting scores.
+            - name: frequency_mhz
+              type: float
+              description: Centre frequency of the path's RF channel, MHz.
+            - name: trapped
+              type: boolean
+              description: >
+                True if a duct at any of the path's points is thick enough to
+                trap the channel's frequency.
         - name: lrf
           type: group
           fields: &point_fields
+            - name: ducting
+              type: group
+              description: >
+                Ducting summary for this point. Not set when the location had
+                too few usable heights to analyse.
+              fields:
+                - name: profile_id
+                  type: keyword
+                  description: >
+                    Links to this location's ducting event
+                    (tropobeat.ducting.profile_id) from the same poll.
+                - name: score
+                  type: float
+                  description: Ducting likelihood score, 0-1.
+                - name: class
+                  type: keyword
+                  description: >
+                    Refraction class of the steepest layer: sub_refractive,
+                    normal, super_refractive or ducting.
+                - name: min_dndh_n_per_km
+                  type: float
+                  description: Steepest refractivity gradient dN/dh, N-units per km.
             - name: location
               type: geo_point
             - name: elevation_m
@@ -131,3 +173,116 @@
         - name: transmitter
           type: group
           fields: *point_fields
+
+    - name: tropobeat.ducting
+      type: group
+      description: >
+        Ducting analysis of one weather location for one poll: refractivity
+        at each usable height, the gradient of each layer, and any ducts.
+        One event per unique location; weather points link to it by
+        profile_id. See DUCTING.md.
+      fields:
+        - name: run_id
+          type: keyword
+          description: Discovery run the paths came from.
+        - name: profile_id
+          type: keyword
+          description: >
+            The location the weather was requested for, as "lat,lon"
+            (rounded when coordinate_precision is set).
+        - name: forecast_time
+          type: date
+          description: The hour the weather applies to.
+        - name: location
+          type: geo_point
+        - name: elevation_m
+          type: float
+          description: Terrain elevation, metres.
+        - name: path_ids
+          type: keyword
+          description: Co-channel paths whose weather used this location.
+        - name: lrf_codes
+          type: keyword
+          description: LRFs whose paths (or own weather) used this location.
+        - name: class
+          type: keyword
+          description: >
+            Refraction class of the steepest layer: sub_refractive, normal,
+            super_refractive or ducting; insufficient_data when there were
+            fewer than two usable heights.
+        - name: score
+          type: float
+          description: >
+            Ducting likelihood score, 0-1. Not set for insufficient_data.
+        - name: min_dndh_n_per_km
+          type: float
+          description: >
+            Steepest refractivity gradient dN/dh, N-units per km. Not set for
+            insufficient_data.
+        - name: dropped_levels
+          type: integer
+          description: >
+            Pressure levels left out: below the terrain, under min_layer_m
+            above the point below, or with missing values.
+        - name: points
+          type: group
+          description: >
+            Usable heights, lowest first (an array): the 2 m surface point,
+            then each kept pressure level.
+          fields:
+            - name: pressure_hpa
+              type: float
+            - name: height_m
+              type: float
+              description: Height above sea level, metres.
+            - name: height_agl_m
+              type: float
+              description: Height above ground, metres.
+            - name: temperature_k
+              type: float
+            - name: relative_humidity_pct
+              type: float
+            - name: vapour_pressure_hpa
+              type: float
+              description: Water vapour pressure e, hPa.
+            - name: refractivity_n
+              type: float
+              description: Radio refractivity N, N-units.
+            - name: modified_refractivity_m
+              type: float
+              description: Modified refractivity M = N + 0.157 h (h above sea level), M-units.
+        - name: layers
+          type: group
+          description: The air between consecutive points (an array), lowest first.
+          fields:
+            - name: base_agl_m
+              type: float
+            - name: top_agl_m
+              type: float
+            - name: dndh_n_per_km
+              type: float
+              description: Refractivity gradient dN/dh, N-units per km.
+            - name: dmdh_m_per_km
+              type: float
+              description: Modified refractivity gradient dM/dh, M-units per km. Negative means ducting.
+            - name: class
+              type: keyword
+              description: sub_refractive, normal, super_refractive or ducting.
+        - name: ducts
+          type: group
+          description: Ducts found (an array), lowest first; empty when none.
+          fields:
+            - name: type
+              type: keyword
+              description: surface, surface_based or elevated.
+            - name: base_agl_m
+              type: float
+            - name: top_agl_m
+              type: float
+            - name: thickness_m
+              type: float
+            - name: delta_m
+              type: float
+              description: >
+                Duct strength: M at the base of the trapping layer minus M at
+                its top, M-units.

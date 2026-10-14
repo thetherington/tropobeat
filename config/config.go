@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thetherington/tropobeat/internal/cochannel"
+	"github.com/thetherington/tropobeat/internal/ducting"
 	"github.com/thetherington/tropobeat/internal/elastic"
 	"github.com/thetherington/tropobeat/internal/fcc"
 	"github.com/thetherington/tropobeat/internal/lrf"
@@ -29,6 +30,8 @@ type Config struct {
 	FCCIndex  string          `config:"fcc_index" validate:"required"`
 	Cochannel CochannelConfig `config:"cochannel"`
 	OpenMeteo OpenMeteoConfig `config:"openmeteo"`
+	// Ducting configures the ducting calculation run on each weather poll.
+	Ducting ducting.Config `config:"ducting"`
 }
 
 // OpenMeteoConfig is the weather client configuration plus a switch for the
@@ -65,4 +68,5 @@ var DefaultConfig = Config{
 		DemodWindow: 24 * time.Hour,
 	},
 	OpenMeteo: OpenMeteoConfig{Enabled: true, Config: openmeteo.DefaultConfig},
+	Ducting:   ducting.DefaultConfig,
 }

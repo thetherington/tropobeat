@@ -10,6 +10,7 @@ import (
 	"github.com/elastic/elastic-agent-libs/mapstr"
 
 	"github.com/thetherington/tropobeat/internal/cochannel"
+	"github.com/thetherington/tropobeat/internal/ducting"
 	"github.com/thetherington/tropobeat/internal/lrf"
 	"github.com/thetherington/tropobeat/internal/openmeteo"
 )
@@ -95,7 +96,7 @@ func TestWeatherEvent(t *testing.T) {
 	}}
 
 	fetched := hour.Add(17 * time.Minute)
-	ev := weatherEvent(g, &path, "TERH", "run1", fetched)
+	ev := weatherEvent(g, &path, "TERH", "run1", fetched, nil)
 	if !ev.Timestamp.Equal(fetched) {
 		t.Errorf("timestamp = %v, want fetch time %v", ev.Timestamp, fetched)
 	}
@@ -126,7 +127,7 @@ func TestWeatherEvent(t *testing.T) {
 	}
 
 	// LRF-only group: no path fields.
-	lrfOnly := weatherEvent(openmeteo.GroupProfile{ID: "BOS", Points: g.Points[:1]}, nil, "BOS", "", fetched)
+	lrfOnly := weatherEvent(openmeteo.GroupProfile{ID: "BOS", Points: g.Points[:1]}, nil, "BOS", "", fetched, nil)
 	if _, err := lrfOnly.Fields.GetValue("tropobeat.weather.rf_channel"); err == nil {
 		t.Error("LRF-only event should have no rf_channel")
 	}
@@ -210,4 +211,168 @@ func mustClient(t *testing.T) openmeteo.Client {
 		t.Fatal(err)
 	}
 	return c
+}
+
+func fp(v float64) *float64 { return &v }
+
+func lvl(p, h, tK, rh float64) openmeteo.Level {
+	return openmeteo.Level{PressureHPa: fp(p), HeightM: fp(h), TemperatureK: fp(tK), RelativeHumidityPct: fp(rh)}
+}
+
+// ductingFixture returns two paths sharing the TERH LRF, plus an LRF-only
+// group (BOS). TERH has a surface duct; the midpoint of the first path is
+// super-refractive; everything else is normal.
+func ductingFixture() []fetchedGroup {
+	hour := time.Date(2026, 10, 14, 15, 0, 0, 0, time.UTC)
+	normal := func(lat, lon float64) *openmeteo.Profile {
+		return &openmeteo.Profile{
+			Requested: openmeteo.Coordinate{Lat: lat, Lon: lon}, Elevation: 0, Time: hour,
+			Surface: lvl(1013.25, 2, 288.15, 60),
+			Levels:  []openmeteo.Level{lvl(1000, 112, 287.4, 60), lvl(975, 323, 286.0, 58)},
+		}
+	}
+	terh := &openmeteo.Profile{
+		Requested: openmeteo.Coordinate{Lat: 39.465533, Lon: -87.4023442}, Elevation: 150, Time: hour,
+		Surface: lvl(1002.1, 152, 284.2, 96),
+		Levels:  []openmeteo.Level{lvl(1000, 170, 284.4, 94), lvl(975, 380, 288.9, 41), lvl(950, 600, 287.5, 45)},
+	}
+	// N falls about 100 N/km between the surface and 975 hPa.
+	superMid := &openmeteo.Profile{
+		Requested: openmeteo.Coordinate{Lat: 39.93, Lon: -86.7}, Elevation: 0, Time: hour,
+		Surface: lvl(1013.25, 2, 288.15, 80),
+		Levels:  []openmeteo.Level{lvl(975, 323, 288.5, 55)},
+	}
+	pp := func(label string, p *openmeteo.Profile) openmeteo.PointProfile {
+		return openmeteo.PointProfile{Label: label, Coordinate: p.Requested, Profile: p}
+	}
+
+	a := testPath() // TERH:1001:10
+	b := testPath()
+	b.Transmitter.FacilityID = "2002"
+	b.RFChannel = 2
+	b.Midpoint = cochannel.Point{Lat: 38.5, Lon: -87.0}
+	b.Transmitter.Location = cochannel.Point{Lat: 37.9, Lon: -86.6}
+
+	return []fetchedGroup{
+		{group: openmeteo.GroupProfile{ID: a.ID(), Points: []openmeteo.PointProfile{
+			pp("lrf", terh), pp("midpoint", superMid), pp("transmitter", normal(40.4, -86.0)),
+		}}, path: &a, lrfCode: "TERH"},
+		{group: openmeteo.GroupProfile{ID: b.ID(), Points: []openmeteo.PointProfile{
+			pp("lrf", terh), pp("midpoint", normal(38.5, -87.0)), pp("transmitter", normal(37.9, -86.6)),
+		}}, path: &b, lrfCode: "TERH"},
+		{group: openmeteo.GroupProfile{ID: "BOS", Points: []openmeteo.PointProfile{
+			pp("lrf", normal(42.36, -71.06)),
+		}}, lrfCode: "BOS"},
+	}
+}
+
+func TestDuctingSummaryOnWeatherEvent(t *testing.T) {
+	groups := ductingFixture()
+	locs := analyseLocations(groups, ducting.DefaultConfig)
+	at := time.Date(2026, 10, 14, 15, 17, 0, 0, time.UTC)
+
+	f := weatherEvent(groups[0].group, groups[0].path, "TERH", "run1", at, locs).Fields
+	for k, want := range map[string]any{
+		"tropobeat.weather.lrf.ducting.profile_id":         "39.465533,-87.4023442",
+		"tropobeat.weather.lrf.ducting.class":              "ducting",
+		"tropobeat.weather.midpoint.ducting.class":         "super_refractive",
+		"tropobeat.weather.transmitter.ducting.class":      "normal",
+		"tropobeat.weather.transmitter.ducting.score":      0.0,
+		"tropobeat.weather.ducting.frequency_mhz":          195.0,
+		"tropobeat.weather.ducting.trapped":                true,
+		"tropobeat.weather.midpoint.ducting.profile_id":    "39.93,-86.7",
+		"tropobeat.weather.transmitter.ducting.profile_id": "40.4,-86",
+	} {
+		if got := get(t, f, k); got != want {
+			t.Errorf("%s = %v, want %v", k, got, want)
+		}
+	}
+	lrfScore := get(t, f, "tropobeat.weather.lrf.ducting.score").(float64)
+	midScore := get(t, f, "tropobeat.weather.midpoint.ducting.score").(float64)
+	index := get(t, f, "tropobeat.weather.ducting.index").(float64)
+	if want := (lrfScore + midScore) / 3; index != want || midScore <= 0 || midScore >= 0.6 {
+		t.Errorf("index = %v, want mean %v (lrf %v, midpoint %v)", index, want, lrfScore, midScore)
+	}
+
+	// RF 2 (57 MHz) needs a duct over 340 m thick; TERH's is 228 m.
+	f = weatherEvent(groups[1].group, groups[1].path, "TERH", "run1", at, locs).Fields
+	if got := get(t, f, "tropobeat.weather.ducting.trapped"); got != false {
+		t.Errorf("RF 2 trapped = %v, want false", got)
+	}
+
+	// An LRF-only event gets the point summary but no path index.
+	f = weatherEvent(groups[2].group, nil, "BOS", "run1", at, locs).Fields
+	if _, err := f.GetValue("tropobeat.weather.ducting"); err == nil {
+		t.Error("LRF-only event should have no path ducting index")
+	}
+	get(t, f, "tropobeat.weather.lrf.ducting.score")
+}
+
+func TestDuctingEvents(t *testing.T) {
+	locs := analyseLocations(ductingFixture(), ducting.DefaultConfig)
+	at := time.Date(2026, 10, 14, 15, 17, 0, 0, time.UTC)
+
+	// 6 unique locations: TERH is shared by both paths.
+	if len(locs) != 6 {
+		t.Fatalf("%d locations, want 6", len(locs))
+	}
+
+	all, notable, insufficient := ductingEvents(locs, ducting.PublishAll, "run1", at)
+	if len(all) != 6 || notable != 2 || insufficient != 0 {
+		t.Errorf("all: %d events, %d notable, %d insufficient; want 6, 2, 0", len(all), notable, insufficient)
+	}
+	some, _, _ := ductingEvents(locs, ducting.PublishNotable, "run1", at)
+	if len(some) != 2 {
+		t.Errorf("notable: %d events, want 2", len(some))
+	}
+
+	var terh mapstr.M
+	for _, ev := range all {
+		if get(t, ev.Fields, "tropobeat.ducting.profile_id") == "39.465533,-87.4023442" {
+			terh = ev.Fields
+		}
+	}
+	if terh == nil {
+		t.Fatal("no ducting event for TERH")
+	}
+	if !all[0].Timestamp.Equal(at) {
+		t.Errorf("timestamp = %v, want %v", all[0].Timestamp, at)
+	}
+	for k, want := range map[string]any{
+		"metricset.name":                   "ducting",
+		"tropobeat.ducting.class":          "ducting",
+		"tropobeat.ducting.dropped_levels": 1,
+		"tropobeat.ducting.run_id":         "run1",
+		"tropobeat.ducting.elevation_m":    150.0,
+	} {
+		if got := get(t, terh, k); got != want {
+			t.Errorf("%s = %v, want %v", k, got, want)
+		}
+	}
+	paths := get(t, terh, "tropobeat.ducting.path_ids").([]string)
+	if !slices.Equal(paths, []string{"TERH:1001:10", "TERH:2002:2"}) {
+		t.Errorf("path_ids = %v", paths)
+	}
+	if codes := get(t, terh, "tropobeat.ducting.lrf_codes").([]string); !slices.Equal(codes, []string{"TERH"}) {
+		t.Errorf("lrf_codes = %v", codes)
+	}
+	if n := len(get(t, terh, "tropobeat.ducting.points").([]mapstr.M)); n != 3 {
+		t.Errorf("%d points, want 3", n)
+	}
+	ducts := get(t, terh, "tropobeat.ducting.ducts").([]mapstr.M)
+	if len(ducts) != 1 || ducts[0]["type"] != "surface" || ducts[0]["thickness_m"] != 228.0 {
+		t.Errorf("ducts = %v", ducts)
+	}
+}
+
+func TestDuctingEventInsufficientData(t *testing.T) {
+	p := &openmeteo.Profile{Requested: openmeteo.Coordinate{Lat: 39.74, Lon: -104.99}, Elevation: 1597}
+	loc := &location{id: profileID(p), coord: p.Requested, profile: p, analysis: ducting.Analyse(*p, ducting.DefaultConfig)}
+	f := ductingEvent(loc, "", time.Now()).Fields
+	if get(t, f, "tropobeat.ducting.class") != "insufficient_data" {
+		t.Error("want class insufficient_data")
+	}
+	if _, err := f.GetValue("tropobeat.ducting.score"); err == nil {
+		t.Error("insufficient_data should have no score")
+	}
 }

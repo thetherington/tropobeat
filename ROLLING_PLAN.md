@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Last updated | 2026-10-14 |
-| Current phase | Phases 1 and 2 core complete; next up: Phase 3 ducting calculation |
+| Current phase | Phase 3 ducting calculation built; calibration against real soundings pending (Q16) |
 | Platform | Evertz Magnum Analytics (inSITE), Elasticsearch, Open-Meteo API |
 
 This is a living document. Update it at the end of each work session: move finished items to **Done**, add new findings to **Open questions** and **Decisions**, and add a line to the **Change log**. Question numbers are never reused, so gaps mean a question was resolved (see **Decisions**).
@@ -89,6 +89,7 @@ The aim is to move operations from reactive troubleshooting to proactive, data-d
 - **Reference data** that changes rarely (the LRF list, FCC transmitters) is loaded with the `tropobeat insert` commands, which can run from cron while tropobeat is running.
 - **Co-channel paths** are discovered daily by tropobeat itself and kept in memory for the weather polls. They are also published to the tropobeat index as the `cochannel` metricset, for dashboards and maps.
 - **Weather data** comes from Open-Meteo. The `internal/openmeteo` package only fetches and organises it; the ducting calculation (`internal/ducting`) interprets it.
+- **Ducting results** are published on every weather poll in two forms: a short summary on each `weather` event (a score and class per point, and a ducting index per path), and the full detail for each weather location as the `ducting` metricset. [DUCTING.md](DUCTING.md) explains the classes, the scoring and every field.
 - **Correlation** and alerting will run inside tropobeat and publish through its normal output.
 - **Locations** are stored as geographic points (and co-channel paths as lines), so distance queries and Kibana maps work directly.
 
@@ -139,19 +140,23 @@ Once a day, inside tropobeat, every LRF's received channels are searched for sam
 | Weather poll uses the co-channel paths | ✅ | See the Phase 1 weather poll. |
 | API call budget with paths | 📋 | See Q15. Measured on the full network: 1,829 co-channel paths, 5,512 path points, 2,589 unique weather locations per poll. |
 
-### Phase 3: Tropospheric ducting calculation (`internal/ducting`) 📋
+### Phase 3: Tropospheric ducting calculation (`internal/ducting`) 🔄
 
-Turns the weather for each path point into ducting indicators. Kept separate from the weather client and tested against known soundings.
+Turns the weather at each path point into refractivity, layer gradients, ducts and a ducting likelihood, and combines a path's three points into one ducting index. Runs on every weather poll. **[DUCTING.md](DUCTING.md)** is the technical reference: what each class means, how scores are calculated, and what every field in the results means.
 
 | Item | Status | Notes |
 |---|---|---|
-| Above-ground profile | 📋 | Drop pressure levels at or below the terrain. Open-Meteo extrapolates them: at Denver (1597 m) the 1000–850 hPa levels are underground. Build a height-ordered profile from the surface level plus above-ground levels. |
-| Refractivity | 📋 | Vapour pressure e from RH and T (Magnus). N = 77.6·P/T + 3.73×10⁵·e/T². Modified refractivity M = N + 0.157·h. |
-| Layer gradients and classification | 📋 | dN/dh and dM/dh per layer. Normal, super-refractive (−79 to −157 N/km), or ducting (≤ −157 N/km, i.e. dM/dh < 0), per ITU-R P.453. |
-| Duct properties | 📋 | Base, top, thickness, M-deficit; surface-based vs elevated. |
-| Ducting likelihood score | 📋 | A likelihood rather than a yes/no, because 200–250 m level spacing dilutes thin ducts. |
-| Frequency-dependent trapping | 📋 | Whether a duct is thick enough to trap a given channel's wavelength. Low VHF needs much thicker ducts than UHF. |
-| Path ducting index | 📋 | Combine the LRF, midpoint and transmitter weather of each co-channel path into one score, now and forecast. |
+| Above-ground profile | ✅ | Each location's profile is the 2 m surface point plus the pressure levels above it. Levels the weather model extrapolates below the terrain are dropped (at Denver, 1597 m, six of eight levels), as are levels less than 20 m above the point below, which would give noisy gradients. The number dropped is recorded. |
+| Refractivity N and modified refractivity M | ✅ | Water vapour pressure from temperature and humidity (Magnus formula), refractivity N = 77.6/T · (P + 4810·e/T), and modified refractivity M = N + 0.157·h. These are the formulas ITU-R P.453 gives for radio work; checked against the recommendation's full forms, they agree to within 1.2 N-units across −40 to 35 °C, all humidities and 700–1050 hPa. |
+| Layer gradients and classes | ✅ | The gradient of N and M through each layer, classed per ITU-R P.453: sub-refractive (above 0 N/km), normal (0 to −79), super-refractive (−79 to −157) or ducting (below −157, where M decreases with height). A location takes the class of its steepest layer. |
+| Duct properties | ✅ | Each run of ducting layers is one duct: surface, surface-based or elevated, with its base, top and thickness above ground and its strength (the fall in M across it). |
+| Ducting likelihood score | ✅ | 0 to 1 from the steepest gradient: 0 for normal air, rising to 0.6 at the ducting boundary and to 1 at −300 N/km. A likelihood rather than a yes/no, because the model's 200–1,000 m level spacing dilutes thin ducts. The bands are settings, with initial values to be calibrated (Q16). |
+| Frequency-dependent trapping | ✅ | Whether a duct is thick enough to trap the path's channel: the lowest trapped frequency is 360,000 / thickness^1.5 MHz (thickness in metres), from the US Naval Postgraduate School's propagation course. Low VHF needs much thicker ducts: about 340 m for RF 2, 160 m for RF 7 and 85 m for RF 14. |
+| Path ducting index | ✅ | The plain mean of the scores at the LRF, midpoint and transmitter, plus a separate yes/no for whether any of the three points has a duct that traps the path's channel. A refinement is open (Q18). |
+| Published results | ✅ | A summary on every `weather` event (each point's score, class and steepest gradient; each path's index, channel frequency and trapping flag), and a `ducting` metricset with one event per unique weather location per poll: every height's refractivity, every layer's gradient and class, the ducts found, and the paths and LRFs that use the location, so maps and searches can move between paths and their ducting detail. The `ducting.publish` setting chooses every location (`all`, the default during calibration) or only super-refractive and ducting ones (`notable`) (Q19). |
+| Technical readme | ✅ | [DUCTING.md](DUCTING.md): the calculation, classes, duct types, scoring, a field reference, how to read results, and setting up Kibana Maps. |
+| Calibration against radiosonde soundings | 📋 | Compare results from model levels with full-resolution weather-balloon soundings near LRFs on known ducting days, to measure how often coarse levels detect, weaken or miss ducts, and to set the score bands (Q16, Q17). |
+| Forecast hours | 📋 | Scoring forecast hours ahead is part of Phase 6. |
 
 ### Phase 4: RF telemetry integration 📋
 
@@ -199,11 +204,15 @@ Turns the weather for each path point into ducting indicators. Kept separate fro
 | Q7 | Are there records of past blackout / pixelation incidents we can use to validate detection? | Phase 8 back-testing |
 | Q8 | Open-Meteo licence: the free API is non-commercial only (10,000 calls/day), and inSITE use is likely commercial, which needs a paid plan and API key. Tropobeat already supports `openmeteo.api_key`. Who will own the account, and which plan? See Q15 for the expected usage. | Production weather polling |
 | Q9 | Polling interval and forecast horizon (currently hourly polling)? These drive the API usage in Q15. | Phase 1 poller, Phase 6 |
-| Q10 | Which weather model: `best_match` (default) or HRRR for CONUS? Confirm coverage for the Alaska and Puerto Rico LRFs. | Phase 1 config, Phase 3 accuracy |
+| Q10 | Which weather model: `best_match` (default) or HRRR for CONUS? Confirm coverage for the Alaska and Puerto Rico LRFs. Also confirm the chosen models report humidity relative to water at all temperatures, as the ducting calculation assumes. | Phase 1 config, Phase 3 accuracy |
 | Q11 | Which FCC records count as an "active" transmitter beyond the default (licensed full-power `DTV`/`TV`/`DT`, PR included)? Should construction permits, Class A (`DCA`), LPTV (`LPD`), distributed transmission sites (`DTS`) or replacement translators (`DRT`) be added? All can be enabled with `--services`/`--statuses`. | Phase 2 discovery filter |
 | Q13 | Should demod input tags be standardised at source? Real data (2026-10-13), 1,095 locked channels at known LRFs: 962 (about 88%) have tags matching a full-power FCC station by call sign; 118 (about 11%) name LPTV, Class A, translator or Mexican stations (handled: nothing excluded); 4 are spare, test or empty inputs (skipped); 11 belong to the swapped MON/MONR codes (Q14). The tags vary in spacing and `(OTA)` style (`KOLR (OTA)` vs `KOLR ( OTA )`, `WMTW(OTA)`), which tropobeat tolerates but which a naming standard would make more reliable. | Phase 2 own-station exclusion accuracy |
 | Q14 | Seven LRFs use different codes in the demod telemetry than in `lrf-coordinates`: `BIRM`/`BIR`, `HTSBG`/`HSTBG`, `LUB`/`LUBB`, `PRESQ`/`PRSQ`, `RNO`/`RNC`, and `MON`/`MONR` are swapped (in the LRF list `MON` is Monroe LA; in the demods `MON` is Monterey CA). Which codes are authoritative: fix the LRF list, fix the demod labels, or add a translation table in tropobeat? Until resolved, these sites are skipped by co-channel discovery: the five mismatched codes as unknown LRF IDs, and the MON/MONR channels by the 150-mile own-station check (verified). Also, `GLEN`, `GRNNC`, `VICT` and `WATER` had no demod data in the 2026-10-13 sample. | Phase 2 discovery for those 11 sites |
 | Q15 | Open-Meteo API budget. Open-Meteo counts calls per location, and a request with more than 10 weather variables counts as several calls. Measured on the full network (2026-10-13): 1,829 co-channel paths give 5,512 path points, of which 2,589 are unique locations; at 27 variables each poll costs about 7,000 calls. Hourly polling is about 5.0 million calls a month, right at the Professional plan's 5 million limit (with `coordinate_precision` 0.01: about 4.6 million; 0.05: about 4.2 million; every 3 hours: about 1.7 million; every 6 hours: about 0.8 million). Which plan will be purchased, and should usage be reduced by polling less often (one poll's hourly forecast covers the hours in between), requesting fewer variables or pressure levels, or merging nearby points (`coordinate_precision`)? During trials, `lrf_sites` limits usage to chosen LRFs, and `openmeteo.enabled: false` turns weather polling off entirely while co-channel discovery keeps running. | Production weather polling |
+| Q16 | Ducting score calibration. The score bands (−79, −157 and −300 N/km, and 0.6 at the ducting boundary) are initial values taken from the ITU-R P.453 classes. Which known ducting events and weather-balloon soundings should they be calibrated against, and who signs off the final values? Links to Q7. | Phase 5 detection rules |
+| Q17 | Vertical resolution. The weather model's pressure levels are 200–1,000 m apart, while real ducts are often 20–200 m thick, so thin ducts are under-scored or missed (a thin strong duct inside a 200 m layer can read as only super-refractive). Is more weather detail near the ground (more levels or a higher-resolution model) worth the extra API usage? Links to Q10, Q15. | Phase 3 accuracy |
+| Q18 | Path ducting index method. The index is a plain mean of the three points' scores, so it ignores the channel frequency (a duct too thin for a VHF channel still raises that path's index) and where along the path the duct sits (one strong point and two normal ones score the same as three moderate ones). Should Phase 5 move to a frequency-aware or midpoint-weighted index? | Phase 5 scoring |
+| Q19 | Ducting data volume. With `ducting.publish: all`, every weather location gets a ducting event on every poll: about 62,000 documents a day on the full network at hourly polling. When should production switch to `notable` (super-refractive and ducting locations only), and what retention suits the ducting data? Links to Q15. | Phase 8 deployment |
 
 ## 5. Decisions
 
@@ -241,6 +250,12 @@ Turns the weather for each path point into ducting indicators. Kept separate fro
 | 2026-10-13 | The own station is looked up nationwide on its channel, not only within the 200-mile search, and Mexican (X) call signs in tags are recognised | Real data showed swapped LRF codes put the own station about 1,700 miles away, outside the search, where the 150-mile check could not see it. Recognising Mexican stations keeps their channels' US co-channel paths instead of skipping them. |
 | 2026-10-14 | Weather events are timestamped when the weather was fetched; the hour the weather applies to is kept in its own field | Dashboards show when data arrived, while the forecast hour stays available for analysis. |
 | 2026-10-14 | Weather events for a co-channel path also carry the path as a line | Weather can be drawn on Kibana maps along each path, in the same way as the co-channel paths. |
+| 2026-10-14 | The ducting calculation uses the Magnus vapour-pressure formula and the ITU-R P.453 radio refractivity formula, with the recommendation's full forms used only as a cross-check | The simpler formulas are standard for radio work and agree with the full forms to within 1.2 N-units, far smaller than the gradients that matter (16 N-units or more per 100 m). The accuracy limit is the weather model's vertical resolution, not the formula (Q17). |
+| 2026-10-14 | Ducting results are published as a summary on `weather` events and in full as a separate `ducting` metricset, one event per unique weather location per poll | Dashboards and alerts use the short summary; the full profile stays available for analysis without making every weather event large. An LRF shared by many paths is analysed and stored once. |
+| 2026-10-14 | The path ducting index is the plain mean of the three points' scores, with duct trapping for the channel reported separately | Simple and easy to explain while the scoring is calibrated; refinements are tracked in Q18. |
+| 2026-10-14 | Duct trapping uses the lowest trapped frequency 360,000 / thickness^1.5 MHz, from the US Naval Postgraduate School's propagation course | A published rule that depends only on duct thickness. An alternative that also uses duct strength could not be confirmed from a source, and a published comparison of trapping methods questions that approach. |
+| 2026-10-14 | A ducting event is published for every location by default (`ducting.publish: all`), with an option to publish only super-refractive and ducting locations | Normal-day profiles are needed as the baseline for calibration (Q16) and Phase 4; production volume is tracked in Q19. |
+| 2026-10-14 | Ducting events list the paths and LRFs that used their location | One search or map filter moves from a co-channel path to its three ducting results. |
 | 2026-10-13 | The workspace's copy of libbeat is patched to accept geographic-shape fields | libbeat's field definitions don't support the shape type needed for the co-channel path lines on Kibana maps. See Known issues. |
 
 ## 6. Known issues
@@ -254,6 +269,9 @@ Turns the weather for each path point into ducting indicators. Kept separate fro
 - Run the FCC import (cron) before the daily discovery time (e.g. FCC at 02:00, discovery at 03:00 UTC), so discovery always reads a complete, freshly refreshed transmitter list.
 - Avoid `tropobeat insert … --recreate` while tropobeat is running: it briefly deletes the index. Normal re-runs are safe.
 - The co-channel path line relies on a one-line patch to the workspace's copy of libbeat (allowing geographic-shape fields). Keep the patch when updating libbeat, or the build of the index template will fail.
+- Ducting results are only as fine as the weather model's pressure levels (200–1,000 m apart near the ground). A thin, strong duct inside one layer is averaged with the air around it: a 50 m duct inside an otherwise normal 200 m layer reads as super-refractive, not ducting. Scores should be read as a likelihood (Q17).
+- Because every detected duct spans at least one model layer (about 200 m or more), almost every duct counts as trapping VHF-high and UHF channels; only low-VHF channels (RF 2–6) are often reported as not trapped. The trapping flag will become more selective with finer vertical detail (Q17).
+- The ducting score bands are initial values that haven't been calibrated against real ducting events yet (Q16).
 - Demod telemetry facts from the 2026-10-13 sample: each input reports about once a minute, and about 21% of reports are `Not Locked` (ignored).
 
 ## 7. Change log
@@ -274,3 +292,4 @@ Turns the weather for each path point into ducting indicators. Kept separate fro
 | 2026-10-13 | Built Phase 1 and Phase 2 core: the gocron scheduler; the combined daily job that reads each LRF's received channels from the demod telemetry and discovers co-channel paths (own-station exclusion, nationwide own-station check, geodesic midpoints); co-channel paths kept in memory and published as the `cochannel` metricset with path lines for Kibana Maps; the hourly weather poll over every path point, published as the `weather` metricset; `lrf_sites` and `coordinate_precision`. Verified end to end against Elasticsearch with a day of real demod telemetry and all 1,749 FCC full-power transmitters. Q13–Q15 updated with measured figures. |
 | 2026-10-13 | Architecture diagram redrawn for readability. Added `openmeteo.enabled` to turn weather polling off and run co-channel discovery only. |
 | 2026-10-14 | Weather events now carry the path line and are timestamped at fetch time, with the forecast hour kept separately. Code comments added to the discovery and scheduling code. |
+| 2026-10-14 | Phase 3 built: the ducting calculation (above-ground profile, refractivity, layer classes, duct types and strength, likelihood score, duct trapping per channel, path ducting index), run on every weather poll. Results published as a summary on `weather` events and in full as the new `ducting` metricset, with `ducting.publish` to choose all or notable locations. Added [DUCTING.md](DUCTING.md), the technical reference for scoring, classes and fields. Q16–Q19 added; Q10 extended. Calibration against real soundings is next. |

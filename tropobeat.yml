@@ -64,6 +64,12 @@ tropobeat:
     # Timeout for each API request.
     timeout: 30s
 
+  # Ducting calculation, run on every weather poll (see DUCTING.md).
+  # "all" publishes a ducting event for every location on every poll;
+  # "notable" only for super-refractive and ducting locations.
+  #ducting:
+    #publish: all
+
 # ================================== General ===================================
 
 # The name of the shipper that publishes the network data. It can be used to group

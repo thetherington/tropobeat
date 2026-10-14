@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 380" width="840" height="380" font-family="Helvetica, Arial, sans-serif" font-size="13" role="img" aria-label="The three duct types: surface, surface-based and elevated, shown as M against height">
+  <title>Duct types: M against height</title>
+  <rect width="840" height="380" fill="#ffffff"/>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#555"/>
+    </marker>
+  </defs>
+
+  <!-- Legend -->
+  <g transform="translate(20,350)">
+    <line x1="0" y1="0" x2="28" y2="0" stroke="#1f4e79" stroke-width="2.5"/>
+    <text x="36" y="4" fill="#222">M profile</text>
+    <line x1="130" y1="0" x2="158" y2="0" stroke="#c0392b" stroke-width="5"/>
+    <text x="166" y="4" fill="#222">trapping layer (M falls with height)</text>
+    <rect x="420" y="-8" width="28" height="16" fill="#d6eaf8" stroke="#85c1e9"/>
+    <text x="456" y="4" fill="#222">the duct</text>
+    <line x1="540" y1="0" x2="568" y2="0" stroke="#7f8c8d" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <text x="576" y="4" fill="#222">M at the duct top, carried down</text>
+  </g>
+
+  <!-- Panel 1: surface -->
+  <g transform="translate(20,20)">
+    <text x="130" y="0" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">surface</text>
+    <text x="130" y="18" text-anchor="middle" fill="#555">trapping layer starts at the ground</text>
+    <rect x="30" y="170" width="220" height="90" fill="#d6eaf8" stroke="#85c1e9"/>
+    <line x1="30" y1="260" x2="250" y2="260" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+    <line x1="30" y1="260" x2="30" y2="35" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+    <text x="245" y="280" text-anchor="end" fill="#555">M →</text>
+    <text x="22" y="40" text-anchor="end" fill="#555" transform="rotate(-90 22 40)">height →</text>
+    <polyline points="150,260 110,170 210,40" fill="none" stroke="#1f4e79" stroke-width="2.5"/>
+    <line x1="150" y1="260" x2="110" y2="170" stroke="#c0392b" stroke-width="5"/>
+    <circle cx="110" cy="170" r="4" fill="#1f4e79"/>
+    <text x="118" y="166" fill="#222">duct top</text>
+    <text x="150" y="215" fill="#222">M falls from</text>
+    <text x="150" y="231" fill="#222">the ground up</text>
+  </g>
+
+  <!-- Panel 2: surface-based -->
+  <g transform="translate(300,20)">
+    <text x="130" y="0" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">surface_based</text>
+    <text x="130" y="18" text-anchor="middle" fill="#555">elevated layer, but duct reaches the ground</text>
+    <rect x="30" y="110" width="220" height="150" fill="#d6eaf8" stroke="#85c1e9"/>
+    <line x1="30" y1="260" x2="250" y2="260" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+    <line x1="30" y1="260" x2="30" y2="35" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+    <text x="245" y="280" text-anchor="end" fill="#555">M →</text>
+    <text x="22" y="40" text-anchor="end" fill="#555" transform="rotate(-90 22 40)">height →</text>
+    <line x1="120" y1="110" x2="120" y2="260" stroke="#7f8c8d" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <polyline points="140,260 175,190 195,150 120,110 210,40" fill="none" stroke="#1f4e79" stroke-width="2.5"/>
+    <line x1="195" y1="150" x2="120" y2="110" stroke="#c0392b" stroke-width="5"/>
+    <circle cx="120" cy="110" r="4" fill="#1f4e79"/>
+    <text x="128" y="104" fill="#222">duct top</text>
+    <circle cx="140" cy="260" r="4" fill="#1f4e79"/>
+    <text x="178" y="236" fill="#222">ground M is</text>
+    <text x="178" y="252" fill="#222">above top M</text>
+  </g>
+
+  <!-- Panel 3: elevated -->
+  <g transform="translate(580,20)">
+    <text x="130" y="0" text-anchor="middle" font-size="15" font-weight="bold" fill="#222">elevated</text>
+    <text x="130" y="18" text-anchor="middle" fill="#555">duct clear of the ground</text>
+    <rect x="30" y="100" width="220" height="106.7" fill="#d6eaf8" stroke="#85c1e9"/>
+    <line x1="30" y1="260" x2="250" y2="260" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+    <line x1="30" y1="260" x2="30" y2="35" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+    <text x="245" y="280" text-anchor="end" fill="#555">M →</text>
+    <text x="22" y="40" text-anchor="end" fill="#555" transform="rotate(-90 22 40)">height →</text>
+    <line x1="130" y1="100" x2="130" y2="206.7" stroke="#7f8c8d" stroke-width="1.5" stroke-dasharray="5 4"/>
+    <polyline points="90,260 150,180 190,140 130,100 210,40" fill="none" stroke="#1f4e79" stroke-width="2.5"/>
+    <line x1="190" y1="140" x2="130" y2="100" stroke="#c0392b" stroke-width="5"/>
+    <circle cx="130" cy="100" r="4" fill="#1f4e79"/>
+    <text x="138" y="94" fill="#222">duct top</text>
+    <circle cx="130" cy="206.7" r="4" fill="#1f4e79"/>
+    <text x="138" y="224" fill="#222">duct base:</text>
+    <text x="138" y="240" fill="#222">M back to top M</text>
+  </g>
+</svg>
