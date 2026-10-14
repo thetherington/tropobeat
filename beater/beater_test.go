@@ -94,17 +94,22 @@ func TestWeatherEvent(t *testing.T) {
 		{Label: "transmitter", Coordinate: openmeteo.Coordinate{Lat: 40.4, Lon: -86.0}, Profile: prof},
 	}}
 
-	ev := weatherEvent(g, &path, "TERH", "run1")
-	if !ev.Timestamp.Equal(hour) {
-		t.Errorf("timestamp = %v, want forecast hour", ev.Timestamp)
+	fetched := hour.Add(17 * time.Minute)
+	ev := weatherEvent(g, &path, "TERH", "run1", fetched)
+	if !ev.Timestamp.Equal(fetched) {
+		t.Errorf("timestamp = %v, want fetch time %v", ev.Timestamp, fetched)
 	}
 	f := ev.Fields
+	if got := get(t, f, "tropobeat.weather.forecast_time"); got != hour {
+		t.Errorf("forecast_time = %v, want forecast hour %v", got, hour)
+	}
 	for k, want := range map[string]any{
 		"metricset.name":                              "weather",
 		"tropobeat.weather.path_id":                   "TERH:1001:10",
 		"tropobeat.weather.lrf_code":                  "TERH",
 		"tropobeat.weather.rf_channel":                10,
 		"tropobeat.weather.transmitter_call_sign":     "WFAR-TV",
+		"tropobeat.weather.path.type":                 "LineString",
 		"tropobeat.weather.midpoint.elevation_m":      150.0,
 		"tropobeat.weather.lrf.surface.temperature_k": 288.15,
 	} {
@@ -121,9 +126,12 @@ func TestWeatherEvent(t *testing.T) {
 	}
 
 	// LRF-only group: no path fields.
-	lrfOnly := weatherEvent(openmeteo.GroupProfile{ID: "BOS", Points: g.Points[:1]}, nil, "BOS", "")
+	lrfOnly := weatherEvent(openmeteo.GroupProfile{ID: "BOS", Points: g.Points[:1]}, nil, "BOS", "", fetched)
 	if _, err := lrfOnly.Fields.GetValue("tropobeat.weather.rf_channel"); err == nil {
 		t.Error("LRF-only event should have no rf_channel")
+	}
+	if _, err := lrfOnly.Fields.GetValue("tropobeat.weather.path"); err == nil {
+		t.Error("LRF-only event should have no path")
 	}
 }
 

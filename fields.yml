@@ -11169,6 +11169,11 @@
           type: integer
         - name: transmitter_call_sign
           type: keyword
+        - name: path
+          type: geo_shape
+          description: >
+            The path as a GeoJSON LineString (LRF, midpoint, transmitter), so
+            Kibana Maps can draw it. Not set for an LRF without paths.
         - name: forecast_time
           type: date
           description: The hour the weather applies to.

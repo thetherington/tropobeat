@@ -15872,6 +15872,16 @@ type: keyword
 
 --
 
+*`tropobeat.weather.path`*::
++
+--
+The path as a GeoJSON LineString (LRF, midpoint, transmitter), so Kibana Maps can draw it. Not set for an LRF without paths.
+
+
+type: geo_shape
+
+--
+
 *`tropobeat.weather.forecast_time`*::
 +
 --

@@ -45,23 +45,16 @@ func cochannelEvent(p cochannel.Path, runID string, at time.Time) beat.Event {
 				"midpoint":    mapstr.M{"location": geoPoint(p.Midpoint)},
 				"distance_mi": p.DistanceMi,
 				"bearing_deg": p.BearingDeg,
-				// The path as a line, so Kibana Maps can draw it.
-				"path": mapstr.M{
-					"type": "LineString",
-					"coordinates": [][]float64{
-						{p.LRF.Lon, p.LRF.Lat},
-						{p.Midpoint.Lon, p.Midpoint.Lat},
-						{p.Transmitter.Location.Lon, p.Transmitter.Location.Lat},
-					},
-				},
+				"path":        pathLine(p),
 			}},
 		},
 	}
 }
 
 // weatherEvent describes the weather along one path (or at one LRF with no
-// paths). path is nil for LRF-only groups.
-func weatherEvent(g openmeteo.GroupProfile, path *cochannel.Path, lrfCode, runID string) beat.Event {
+// paths). path is nil for LRF-only groups. The event is timestamped at, when
+// the weather was fetched; forecast_time is the hour the weather applies to.
+func weatherEvent(g openmeteo.GroupProfile, path *cochannel.Path, lrfCode, runID string, at time.Time) beat.Event {
 	w := mapstr.M{
 		"path_id":  g.ID,
 		"lrf_code": lrfCode,
@@ -72,6 +65,7 @@ func weatherEvent(g openmeteo.GroupProfile, path *cochannel.Path, lrfCode, runID
 	if path != nil {
 		w["rf_channel"] = path.RFChannel
 		w["transmitter_call_sign"] = path.Transmitter.CallSign
+		w["path"] = pathLine(*path)
 	}
 
 	var forecast time.Time
@@ -85,7 +79,7 @@ func weatherEvent(g openmeteo.GroupProfile, path *cochannel.Path, lrfCode, runID
 	w["forecast_time"] = forecast
 
 	return beat.Event{
-		Timestamp: forecast,
+		Timestamp: at,
 		Fields: mapstr.M{
 			"metricset": mapstr.M{"name": metricsetWeather},
 			"tropobeat": mapstr.M{"weather": w},
@@ -119,6 +113,20 @@ func levelFields(l openmeteo.Level) mapstr.M {
 	put("temperature_k", l.TemperatureK)
 	put("relative_humidity_pct", l.RelativeHumidityPct)
 	return m
+}
+
+// pathLine returns the path as a GeoJSON LineString (LRF, midpoint,
+// transmitter), so Kibana Maps can draw it. GeoJSON coordinates are
+// [lon, lat].
+func pathLine(p cochannel.Path) mapstr.M {
+	return mapstr.M{
+		"type": "LineString",
+		"coordinates": [][]float64{
+			{p.LRF.Lon, p.LRF.Lat},
+			{p.Midpoint.Lon, p.Midpoint.Lat},
+			{p.Transmitter.Location.Lon, p.Transmitter.Location.Lat},
+		},
+	}
 }
 
 func geoPoint(p cochannel.Point) mapstr.M {

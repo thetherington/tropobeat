@@ -72,6 +72,8 @@ func Discover(ctx context.Context, es *elasticsearch.Client, opts Options, lrfs 
 		opts.MaxOwnStationMiles = DefaultMaxOwnStationMiles
 	}
 
+	// Index the LRFs by upper-cased code, to match the demod IDs, which
+	// LoadReceived upper-cases.
 	sites := make(map[string]lrf.LRF, len(lrfs))
 	for _, l := range lrfs {
 		sites[strings.ToUpper(l.Code)] = l
@@ -83,12 +85,19 @@ func Discover(ctx context.Context, es *elasticsearch.Client, opts Options, lrfs 
 		todo    []Received
 		queries []string
 	)
+	// Pass 1: decide which received channels to search. Channels of unknown
+	// LRFs and channels with no call sign are set aside here. Each of the
+	// rest gets one search query; todo[i] and queries[i] stay aligned so
+	// the results can be matched back to their channel below.
 	for _, r := range received {
 		l, ok := sites[r.LRFCode]
 		if !ok {
 			unknown[r.LRFCode] = struct{}{}
 			continue
 		}
+		// Without a call sign the LRF's own station can't be identified,
+		// so every transmitter on the channel would look like an
+		// interferer. These are spare or test inputs, so skip them.
 		if len(r.CallSigns) == 0 {
 			res.NoCallSign = append(res.NoCallSign, Note{LRFCode: r.LRFCode, RFChannel: r.RFChannel, Tags: r.Tags, Detail: "no call sign in input tag"})
 			continue
@@ -105,6 +114,8 @@ func Discover(ctx context.Context, es *elasticsearch.Client, opts Options, lrfs 
 	}
 	slices.Sort(res.UnknownLRFs)
 
+	// Run every channel's search in bulk (100 per request). hits[i] holds
+	// the transmitters found for todo[i].
 	hits, err := elastic.MultiSearch[fcc.Document](ctx, es, opts.FCCIndex, queries)
 	if err != nil {
 		return res, err
@@ -117,15 +128,24 @@ func Discover(ctx context.Context, es *elasticsearch.Client, opts Options, lrfs 
 	if err != nil {
 		return res, err
 	}
+	// Group the full FCC list by RF channel, so each channel's own-station
+	// lookup only scans transmitters on that channel. The list is small
+	// (about 1,750 full-power stations), so one read per run is cheap.
 	byChannel := map[int][]fcc.Document{}
 	for _, d := range all {
 		byChannel[d.RFChannel] = append(byChannel[d.RFChannel], d)
 	}
 
+	// Pass 2: turn each channel's search hits into paths, and record any
+	// channel that needs attention.
 	for i, r := range todo {
 		res.Channels++
 		l := sites[r.LRFCode]
 		paths, note, excluded := channelPaths(l, r, hits[i], byChannel[r.RFChannel], opts.MaxOwnStationMiles)
+		// A note with excluded == -1 means the channel was skipped (own
+		// station too far away), so it has no paths. A note otherwise means
+		// the own station wasn't in the FCC data: the paths are kept and the
+		// channel is just reported.
 		switch {
 		case note != nil && excluded < 0:
 			res.TooFar = append(res.TooFar, *note)
@@ -137,6 +157,8 @@ func Discover(ctx context.Context, es *elasticsearch.Client, opts Options, lrfs 
 		res.Paths = append(res.Paths, paths...)
 	}
 
+	// Sort so the output is stable from run to run: by LRF, channel and
+	// nearest transmitter first. Facility ID breaks ties.
 	slices.SortFunc(res.Paths, func(a, b Path) int {
 		return cmp.Or(
 			cmp.Compare(a.LRFCode, b.LRFCode),
@@ -155,6 +177,10 @@ func Discover(ctx context.Context, es *elasticsearch.Client, opts Options, lrfs 
 // transmitters removed, or -1 when the channel is skipped (own station too
 // far away).
 func channelPaths(l lrf.LRF, r Received, hits, sameChannel []fcc.Document, maxOwnMiles float64) (paths []Path, note *Note, excluded int) {
+	// Find the LRF's own station: the nearest transmitter on this channel,
+	// anywhere in the country, whose call sign is in the input's tag. A
+	// station can have several transmitters with the same call sign, so
+	// the nearest one is used. -1 means none was found.
 	nearestOwnM := -1.0
 	for _, d := range sameChannel {
 		if !slices.Contains(r.CallSigns, baseCallSign(d.CallSign)) {
@@ -166,19 +192,29 @@ func channelPaths(l lrf.LRF, r Received, hits, sameChannel []fcc.Document, maxOw
 	}
 
 	switch {
+	// No own station in the FCC data (LPTV, Class A, translator or a
+	// foreign station). Every hit is then a genuine full-power
+	// transmitter, so nothing is excluded; the channel is just reported.
 	case nearestOwnM < 0:
 		note = &Note{LRFCode: r.LRFCode, RFChannel: r.RFChannel, Tags: r.Tags,
 			Detail: fmt.Sprintf("call signs %s not in FCC transmitters on RF %d; nothing excluded", strings.Join(r.CallSigns, "/"), r.RFChannel)}
+	// The own station is implausibly far away, which points to a wrong LRF
+	// code or coordinates (e.g. the MON/MONR swap). Searching around the
+	// wrong site would invent paths, so skip the channel.
 	case nearestOwnM/metresPerMile > maxOwnMiles:
 		return nil, &Note{LRFCode: r.LRFCode, RFChannel: r.RFChannel, Tags: r.Tags,
 			Detail: fmt.Sprintf("own station %s is %.0f mi away (limit %.0f); possible LRF code or coordinate mismatch", strings.Join(r.CallSigns, "/"), nearestOwnM/metresPerMile, maxOwnMiles)}, -1
 	}
 
+	// Every hit within the radius is a co-channel path, except the LRF's
+	// own station(s), which are counted and dropped.
 	for _, h := range hits {
 		if slices.Contains(r.CallSigns, baseCallSign(h.CallSign)) {
 			excluded++
 			continue
 		}
+		// Midpoint, distance and bearing on the WGS84 ellipsoid. The
+		// midpoint is where the path's weather is sampled.
 		loc := h.Location
 		midLat, midLon, distM, bearing := Midpoint(l.Latitude, l.Longitude, loc.Lat, loc.Lon)
 		paths = append(paths, Path{
@@ -201,8 +237,28 @@ func channelPaths(l lrf.LRF, r Received, hits, sameChannel []fcc.Document, maxOw
 	return paths, note, excluded
 }
 
-// channelQuery finds the transmitters on rf within radius of the LRF.
+// channelQuery finds the transmitters on rf within radius of the LRF. For
+// TERH on RF 10 with a 200-mile radius it builds:
+//
+//	{
+//	  "size": 1000,
+//	  "query": {
+//	    "bool": {
+//	      "filter": [
+//	        { "term": { "rf_channel": 10 } },
+//	        {
+//	          "geo_distance": {
+//	            "distance": "200mi",
+//	            "location": { "lat": 39.465533, "lon": -87.4023442 }
+//	          }
+//	        }
+//	      ]
+//	    }
+//	  }
+//	}
 func channelQuery(l lrf.LRF, rf int, radius string) (string, error) {
+	// Both clauses are filters (no scoring needed): same RF channel, and
+	// within radius of the LRF's location.
 	q := map[string]any{
 		"size": maxHitsPerChannel,
 		"query": map[string]any{"bool": map[string]any{"filter": []any{
@@ -217,7 +273,9 @@ func channelQuery(l lrf.LRF, rf int, radius string) (string, error) {
 	return string(b), err
 }
 
-// baseCallSign strips a service suffix such as "-TV" or "-DT".
+// baseCallSign strips a service suffix such as "-TV" or "-DT", so FCC call
+// signs ("WTHI-TV") compare equal to the bare call signs parsed from demod
+// tags ("WTHI").
 func baseCallSign(cs string) string {
 	base, _, _ := strings.Cut(strings.ToUpper(strings.TrimSpace(cs)), "-")
 	return base

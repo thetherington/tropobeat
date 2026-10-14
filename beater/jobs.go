@@ -27,6 +27,8 @@ type snapshot struct {
 // the full list (to recognise demod IDs that belong to LRFs filtered out)
 // and the selected LRFs.
 func (bt *tropobeat) loadLRFs(ctx context.Context) (all, selected []lrf.LRF, err error) {
+	// Read every LRF site from Elasticsearch. An empty index is an error:
+	// without sites there is nothing to discover or poll.
 	all, err = lrf.Load(ctx, bt.es, bt.config.LRFIndex)
 	if err != nil {
 		return nil, nil, fmt.Errorf("loading LRF sites from index %s: %w", bt.config.LRFIndex, err)
@@ -35,6 +37,9 @@ func (bt *tropobeat) loadLRFs(ctx context.Context) (all, selected []lrf.LRF, err
 		return nil, nil, fmt.Errorf("no LRF sites found in index %s; load them with `tropobeat insert lrfcoordinates`", bt.config.LRFIndex)
 	}
 
+	// Narrow the list to the codes in lrf_sites (all sites when it is
+	// empty). Codes that don't match any site are only warned about, but
+	// if nothing at all matches the run can't continue.
 	selected, unknown := lrf.Select(all, bt.config.LRFSites)
 	if len(unknown) > 0 {
 		bt.logger.Warnf("lrf_sites: codes not found in index %s: %s", bt.config.LRFIndex, strings.Join(unknown, ", "))
@@ -52,7 +57,13 @@ func (bt *tropobeat) loadLRFs(ctx context.Context) (all, selected []lrf.LRF, err
 // the demod telemetry, discovers the co-channel paths, swaps them into
 // memory and publishes them. On error the previous snapshot is kept.
 func (bt *tropobeat) runCochannel(ctx context.Context) error {
+	// The weather job waits for the first discovery run so it has paths to
+	// poll. Kick it off when this run returns, whether or not it succeeded;
+	// startWeatherOnce only does this the first time.
 	defer bt.startWeatherOnce()
+
+	// The run ID is the UTC start time; it tags every event from this run
+	// so co-channel and weather events can be tied back to it.
 	start := time.Now().UTC()
 	runID := start.Format("20060102T150405Z")
 
@@ -61,12 +72,18 @@ func (bt *tropobeat) runCochannel(ctx context.Context) error {
 		return err
 	}
 
+	// Find which RF channels each LRF is currently receiving, from demod
+	// telemetry within the configured window, then drop the ones that
+	// belong to LRFs outside lrf_sites.
 	received, err := cochannel.LoadReceived(ctx, bt.es, bt.config.DemodIndex, bt.config.Cochannel.DemodWindow)
 	if err != nil {
 		return err
 	}
 	received = filterReceived(received, all, selected, len(bt.config.LRFSites) > 0)
 
+	// For each received channel, search the FCC transmitter index for other
+	// stations on the same channel within the radius of the LRF. Each one
+	// becomes a co-channel path (LRF -> midpoint -> transmitter).
 	res, err := cochannel.Discover(ctx, bt.es, cochannel.Options{
 		FCCIndex: bt.config.FCCIndex,
 		Radius:   bt.config.Cochannel.Radius,
@@ -75,14 +92,19 @@ func (bt *tropobeat) runCochannel(ctx context.Context) error {
 		return err
 	}
 
+	// Swap the new LRFs and paths in atomically. Only reached on success,
+	// so a failed run leaves the weather job using the previous snapshot.
 	bt.state.Store(&snapshot{RunID: runID, At: start, LRFs: selected, Paths: res.Paths})
 
+	// Publish one event per discovered path.
 	events := make([]beat.Event, len(res.Paths))
 	for i, p := range res.Paths {
 		events[i] = cochannelEvent(p, runID, start)
 	}
 	bt.client.PublishAll(events)
 
+	// Everything below is logging: a summary of the run, then the channels
+	// that were skipped and why.
 	lrfsWithChannels := map[string]struct{}{}
 	for _, r := range received {
 		lrfsWithChannels[r.LRFCode] = struct{}{}
@@ -90,15 +112,24 @@ func (bt *tropobeat) runCochannel(ctx context.Context) error {
 	bt.logger.Infof("Co-channel discovery %s: %d LRFs, %d with demod channels, %d channels searched, %d own-station transmitters excluded, %d co-channel paths published (%s)",
 		runID, len(selected), len(lrfsWithChannels), res.Channels, res.Excluded, len(res.Paths), time.Since(start).Round(time.Millisecond))
 
+	// Demod IDs with no matching LRF site (likely missing from the LRF index).
 	if len(res.UnknownLRFs) > 0 {
 		bt.logger.Warnf("Co-channel discovery: demod LRF IDs not in %s (skipped): %s", bt.config.LRFIndex, strings.Join(res.UnknownLRFs, ", "))
 	}
+	// Channels whose matched own station is further from the LRF than the
+	// configured limit; worth a warning as the demod tag or LRF location
+	// may be wrong.
 	for _, n := range res.TooFar {
 		bt.logger.Warnf("Co-channel discovery: skipped %s RF %d: %s (tags %q)", n.LRFCode, n.RFChannel, n.Detail, n.Tags)
 	}
+	// Channels whose demod tags name no station (e.g. "Spare", "NA"). These
+	// are expected, so they're logged at info rather than as a warning.
 	for _, n := range res.NoCallSign {
 		bt.logger.Infof("Co-channel discovery: skipped %s RF %d: %s (tags %q)", n.LRFCode, n.RFChannel, n.Detail, n.Tags)
 	}
+	// Channels whose own station isn't in the FCC full-power data (e.g. a
+	// low-power or translator station). These are still searched, but
+	// nothing is excluded, so the count is logged and the detail is debug.
 	if len(res.NotInFCC) > 0 {
 		bt.logger.Infof("Co-channel discovery: %d channels receive stations outside the FCC full-power set; nothing excluded on those", len(res.NotInFCC))
 		for _, n := range res.NotInFCC {
@@ -112,6 +143,9 @@ func (bt *tropobeat) runCochannel(ctx context.Context) error {
 // that are not in the LRF list at all are kept (so Discover reports them)
 // unless lrf_sites is limiting the run.
 func filterReceived(received []cochannel.Received, all, selected []lrf.LRF, limited bool) []cochannel.Received {
+	// Map every known LRF code to whether it is selected. A code missing
+	// from the map is unknown. Codes are upper-cased to match the demod
+	// IDs, which LoadReceived upper-cases.
 	known := map[string]bool{}
 	for _, l := range all {
 		known[strings.ToUpper(l.Code)] = false
@@ -120,8 +154,13 @@ func filterReceived(received []cochannel.Received, all, selected []lrf.LRF, limi
 		known[strings.ToUpper(l.Code)] = true
 	}
 
+	// received[:0:0] is an empty slice with zero capacity, so appending
+	// allocates a new array instead of overwriting the caller's slice.
 	out := received[:0:0]
 	for _, r := range received {
+		// Keep selected LRFs. Keep unknown IDs only for an unlimited run,
+		// so they show up in the "not in index" warning; with lrf_sites
+		// set they're most likely just sites outside the selection.
 		isSelected, isKnown := known[r.LRFCode]
 		if isSelected || (!isKnown && !limited) {
 			out = append(out, r)
@@ -133,11 +172,20 @@ func filterReceived(received []cochannel.Received, all, selected []lrf.LRF, limi
 // runWeather fetches the weather for every co-channel path point and every
 // LRF without paths, and publishes one event per complete group.
 func (bt *tropobeat) runWeather(ctx context.Context) error {
+	// Use the latest snapshot from co-channel discovery. Before the first
+	// successful run there is nothing to poll.
 	snap := bt.state.Load()
 	if snap == nil || len(snap.LRFs) == 0 {
 		return errors.New("no LRF sites loaded yet")
 	}
 
+	// Build the weather groups. A group is the set of points whose
+	// weather is fetched together and published as one event.
+	//
+	// Each co-channel path is a group of three points (LRF, midpoint,
+	// transmitter), keyed by path ID. paths maps that ID back to the path
+	// so the event can include it, and withPaths records which LRFs
+	// already have at least one path.
 	paths := make(map[string]*cochannel.Path, len(snap.Paths))
 	withPaths := map[string]struct{}{}
 	groups := make([]openmeteo.Group, 0, len(snap.Paths)+len(snap.LRFs))
@@ -148,6 +196,8 @@ func (bt *tropobeat) runWeather(ctx context.Context) error {
 		withPaths[p.LRFCode] = struct{}{}
 		groups = append(groups, g)
 	}
+	// LRFs with no paths still get their own weather: a one-point group
+	// keyed by the LRF code. lrfOnly records those group IDs.
 	lrfOnly := map[string]string{}
 	for _, l := range snap.LRFs {
 		code := strings.ToUpper(l.Code)
@@ -161,6 +211,9 @@ func (bt *tropobeat) runWeather(ctx context.Context) error {
 		}}})
 	}
 
+	// Count the points and how many distinct locations they reduce to.
+	// These are only for the summary log: GroupProfiles does the actual
+	// de-duplication, so an LRF shared by several paths is fetched once.
 	var coords []openmeteo.Coordinate
 	for _, g := range groups {
 		for _, p := range g.Points {
@@ -173,9 +226,14 @@ func (bt *tropobeat) runWeather(ctx context.Context) error {
 		batch = openmeteo.DefaultConfig.BatchSize
 	}
 
+	// Fetch the weather for all groups. On a partial failure fetchErr is
+	// set, but the groups that did fetch are still returned and published;
+	// the error is returned at the end.
 	start := time.Now()
 	results, fetchErr := bt.weather.GroupProfiles(ctx, groups, start)
 
+	// Publish one event per group, skipping any group missing the weather
+	// for one of its points, so a path event always has all three points.
 	events := make([]beat.Event, 0, len(results))
 	incomplete := 0
 	for _, g := range results {
@@ -183,15 +241,19 @@ func (bt *tropobeat) runWeather(ctx context.Context) error {
 			incomplete++
 			continue
 		}
+		// Work out the LRF code for the event: from the path for a path
+		// group (p is non-nil), or the group ID for an LRF-only group.
 		code := lrfOnly[g.ID]
 		p := paths[g.ID]
 		if p != nil {
 			code = p.LRFCode
 		}
-		events = append(events, weatherEvent(g, p, code, snap.RunID))
+		events = append(events, weatherEvent(g, p, code, snap.RunID, start))
 	}
 	bt.client.PublishAll(events)
 
+	// The request count is unique locations divided by batch size,
+	// rounded up.
 	bt.logger.Infof("Weather poll: %d groups (%d co-channel paths, %d LRF-only); points: %d requested, %d unique after merge, %d requests; %d events published, %d incomplete (%s)",
 		len(groups), len(snap.Paths), len(lrfOnly), len(coords), unique, (unique+batch-1)/batch, len(events), incomplete, time.Since(start).Round(time.Millisecond))
 

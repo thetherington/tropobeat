@@ -119,43 +119,47 @@ func (bt *tropobeat) Run(b *beat.Beat) error {
 }
 
 func (bt *tropobeat) registerJobs() error {
-	jobs := []struct {
-		name string
-		def  gocron.JobDefinition
-		run  func(context.Context) error
-		// startNow runs the job at start-up. The weather poll instead starts
-		// when the first discovery run ends, so its first poll covers the
-		// co-channel paths rather than only the LRFs.
-		startNow bool
-		job      *gocron.Job
-	}{
-		{name: "cochannel", def: gocron.CronJob(bt.config.Cochannel.Schedule, false), run: bt.runCochannel, startNow: true},
-		{name: "weather", def: gocron.DurationJob(bt.config.Period), run: bt.runWeather, job: &bt.weatherJob},
+	// Co-channel discovery runs on its cron schedule and once at start-up.
+	_, err := bt.scheduler.NewJob(
+		gocron.CronJob(bt.config.Cochannel.Schedule, false),
+		gocron.NewTask(bt.runCochannel),
+		bt.jobOptions("cochannel", gocron.WithStartAt(gocron.WithStartImmediately()))...,
+	)
+	if err != nil {
+		return fmt.Errorf("scheduling cochannel job: %w", err)
 	}
+
 	if bt.weather == nil {
-		jobs = jobs[:1] // weather polling disabled
+		return nil // weather polling disabled
 	}
-	for _, j := range jobs {
-		opts := []gocron.JobOption{
-			gocron.WithName(j.name),
-			gocron.WithContext(bt.ctx),
-			gocron.WithSingletonMode(gocron.LimitModeReschedule),
-			gocron.WithEventListeners(gocron.AfterJobRunsWithError(func(_ uuid.UUID, name string, err error) {
-				bt.logger.Errorf("Job %s failed: %v", name, err)
-			})),
-		}
-		if j.startNow {
-			opts = append(opts, gocron.WithStartAt(gocron.WithStartImmediately()))
-		}
-		job, err := bt.scheduler.NewJob(j.def, gocron.NewTask(j.run), opts...)
-		if err != nil {
-			return fmt.Errorf("scheduling %s job: %w", j.name, err)
-		}
-		if j.job != nil {
-			*j.job = job
-		}
+
+	// The weather poll runs every period. It isn't started immediately:
+	// startWeatherOnce runs it when the first discovery run ends, so its
+	// first poll covers the co-channel paths rather than only the LRFs.
+	bt.weatherJob, err = bt.scheduler.NewJob(
+		gocron.DurationJob(bt.config.Period),
+		gocron.NewTask(bt.runWeather),
+		bt.jobOptions("weather")...,
+	)
+	if err != nil {
+		return fmt.Errorf("scheduling weather job: %w", err)
 	}
 	return nil
+}
+
+// jobOptions returns the options shared by every job, followed by extra.
+// A job never overlaps itself: a run that is due while the previous one is
+// still going is skipped. Errors returned by a run are logged.
+func (bt *tropobeat) jobOptions(name string, extra ...gocron.JobOption) []gocron.JobOption {
+	opts := []gocron.JobOption{
+		gocron.WithName(name),
+		gocron.WithContext(bt.ctx),
+		gocron.WithSingletonMode(gocron.LimitModeReschedule),
+		gocron.WithEventListeners(gocron.AfterJobRunsWithError(func(_ uuid.UUID, name string, err error) {
+			bt.logger.Errorf("Job %s failed: %v", name, err)
+		})),
+	}
+	return append(opts, extra...)
 }
 
 // startWeatherOnce runs the first weather poll. It is called when the first
