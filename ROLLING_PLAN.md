@@ -8,7 +8,7 @@
 | Current phase | Phase 3 ducting calculation built; calibration against real soundings pending (Q16) |
 | Platform | Evertz Magnum Analytics (inSITE), Elasticsearch, Open-Meteo API |
 
-This is a living document. Update it at the end of each work session: move finished items to **Done**, add new findings to **Open questions** and **Decisions**, and add a line to the **Change log**. Question numbers are never reused, so gaps mean a question was resolved (see **Decisions**).
+This is a living document. Update it at the end of each work session: move finished items to **Done**, add new findings to **Open questions** and **Decisions**, and add a line to the **Change log**. When a phase (or a user-visible feature) is completed, also update [README.md](README.md), which describes how tropobeat currently works. Question numbers are never reused, so gaps mean a question was resolved (see **Decisions**).
 
 Status legend: ✅ done · 🔄 in progress · ⏳ next up · 📋 planned · ❓ blocked on a question
 
