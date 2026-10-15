@@ -78,6 +78,18 @@ tropobeat:
     # https://customer-api.open-meteo.com/v1/forecast when api_key is set.
     #url: ""
 
+    # Mock weather, for building and testing dashboards: serve simulated
+    # weather instead of calling Open-Meteo. Weather and ducting events are
+    # then simulated and tagged "mock-weather"; co-channel paths stay real.
+    #mock:
+      #enabled: false
+      # mixed (every location cycles through all states, varying with
+      # place), or one state everywhere: normal, super_refractive, ducting
+      # (thin, traps nothing), elevated, trapped_uhf, trapped (traps VHF too).
+      #scenario: mixed
+      # mixed only: how long each location takes to pass through every state.
+      #cycle: 6h
+
     # Weather models to query. Empty uses Open-Meteo's best_match.
     #models: []
 

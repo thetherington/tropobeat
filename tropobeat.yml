@@ -7,12 +7,12 @@ tropobeat:
   # point and every LRF without paths. The first poll runs at start-up.
   # Each poll costs Open-Meteo API calls per location (see the rolling plan,
   # Q15), so check your plan's limits before shortening it.
-  period: 1h
+  period: 1m
 
   # Limit tropobeat to these LRF codes, for limited runs and testing. Only
   # these LRFs' co-channel paths are discovered and only their weather is
   # fetched. Empty or unset means all LRFs.
-  lrf_sites: ["TERH", "PROV"]
+  lrf_sites: ["TERH", "PROV", "BOS"]
 
   # Elasticsearch cluster that tropobeat reads reference data from (the LRF
   # sites loaded with `tropobeat insert lrfcoordinates`). This is separate
@@ -61,6 +61,18 @@ tropobeat:
 
     # Override the API endpoint, e.g. for a self-hosted Open-Meteo instance.
     #url: ""
+
+    # Mock weather, for building and testing dashboards: serve simulated
+    # weather instead of calling Open-Meteo. Weather and ducting events are
+    # then simulated and tagged "mock-weather"; co-channel paths stay real.
+    mock:
+      enabled: true
+      # mixed (every location cycles through all states, varying with
+      # place), or one state everywhere: normal, super_refractive, ducting
+      # (thin, traps nothing), elevated, trapped_uhf, trapped (traps VHF too).
+      scenario: mixed
+      # mixed only: how long each location takes to pass through every state.
+      cycle: 20m
     # Timeout for each API request.
     timeout: 30s
 

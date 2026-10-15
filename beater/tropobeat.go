@@ -3,6 +3,7 @@ package beater
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"sync/atomic"
 
@@ -43,6 +44,8 @@ type tropobeat struct {
 	// by the end of the first discovery run (see firstPoll).
 	weatherJob gocron.Job
 	firstPoll  sync.Once
+	// mock serves simulated weather when openmeteo.mock is enabled.
+	mock *http.Server
 }
 
 // New creates an instance of tropobeat.
@@ -53,11 +56,44 @@ func New(b *beat.Beat, cfg *config.C) (beat.Beater, error) {
 	}
 	logger := logp.NewLogger("tropobeat")
 
-	var weather openmeteo.Client
+	// The weather client. It stays nil when weather polling is off, and the
+	// weather job is then never scheduled.
+	var (
+		weather    openmeteo.Client
+		mockServer *http.Server
+	)
 	if c.OpenMeteo.Enabled {
+		omCfg := c.OpenMeteo.Config
+		if c.OpenMeteo.Mock.Enabled {
+			// Mock weather (openmeteo.mock): instead of calling Open-Meteo,
+			// serve simulated weather from a local HTTP server on 127.0.0.1
+			// (random free port) that speaks the Open-Meteo forecast format.
+			// The client is pointed at that server, so everything after the
+			// fetch (batching, de-duplication, the ducting calculation and
+			// the events) runs exactly as it would with the real API. Only
+			// the weather is simulated: LRFs, demod channels, FCC
+			// transmitters and co-channel discovery stay real.
+			var err error
+			mockServer, omCfg.URL, err = startMockWeather(c.OpenMeteo.Mock)
+			if err != nil {
+				return nil, err
+			}
+			// The mock needs no API key. Clearing it also keeps the key from
+			// being sent to the local server.
+			omCfg.APIKey = ""
+			// Make the mode obvious in the logs. runWeather tags every
+			// weather and ducting event "mock-weather" (see tagMock), so
+			// simulated data can be filtered out or deleted later.
+			logger.Warnf("Using MOCK weather (openmeteo.mock, scenario %s, cycle %s); weather and ducting events are simulated and tagged %q",
+				c.OpenMeteo.Mock.Scenario, c.OpenMeteo.Mock.Cycle, mockWeatherTag)
+		}
 		var err error
-		weather, err = openmeteo.New(c.OpenMeteo.Config)
+		weather, err = openmeteo.New(omCfg)
 		if err != nil {
+			// stopMockWeather does nothing when the mock isn't running; this
+			// and the later error returns shut it down so a failed start
+			// doesn't leave the server listening.
+			stopMockWeather(mockServer)
 			return nil, fmt.Errorf("creating Open-Meteo client: %w", err)
 		}
 		if p := c.OpenMeteo.CoordinatePrecision; p > coordinatePrecisionWarn {
@@ -69,11 +105,13 @@ func New(b *beat.Beat, cfg *config.C) (beat.Beater, error) {
 
 	es, err := elastic.NewClient(c.Elasticsearch)
 	if err != nil {
+		stopMockWeather(mockServer)
 		return nil, fmt.Errorf("creating Elasticsearch client: %w", err)
 	}
 
 	scheduler, err := newScheduler(logger)
 	if err != nil {
+		stopMockWeather(mockServer)
 		return nil, fmt.Errorf("creating scheduler: %w", err)
 	}
 
@@ -86,6 +124,7 @@ func New(b *beat.Beat, cfg *config.C) (beat.Beater, error) {
 		es:        es,
 		weather:   weather,
 		scheduler: scheduler,
+		mock:      mockServer,
 	}
 	return bt, nil
 }
@@ -182,6 +221,7 @@ func (bt *tropobeat) Stop() {
 	if err := bt.scheduler.Shutdown(); err != nil {
 		bt.logger.Warnf("Stopping scheduler: %v", err)
 	}
+	stopMockWeather(bt.mock)
 	if bt.client != nil {
 		bt.client.Close()
 	}

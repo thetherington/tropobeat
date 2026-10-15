@@ -62,6 +62,18 @@ tropobeat:
     # Override the API endpoint, e.g. for a self-hosted Open-Meteo instance.
     #url: ""
 
+    # Mock weather, for building and testing dashboards: serve simulated
+    # weather instead of calling Open-Meteo. Weather and ducting events are
+    # then simulated and tagged "mock-weather"; co-channel paths stay real.
+    #mock:
+      #enabled: false
+      # mixed (every location cycles through all states, varying with
+      # place), or one state everywhere: normal, super_refractive, ducting
+      # (thin, traps nothing), elevated, trapped_uhf, trapped (traps VHF too).
+      #scenario: mixed
+      # mixed only: how long each location takes to pass through every state.
+      #cycle: 6h
+
   # Ducting calculation, run on every weather poll (see DUCTING.md).
   # "all" publishes a ducting event for every location on every poll;
   # "notable" only for super-refractive and ducting locations.

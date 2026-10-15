@@ -171,3 +171,37 @@ func TestUnpackDuctingRejectsUnknownPublish(t *testing.T) {
 		t.Error("ducting.publish: some should fail validation")
 	}
 }
+
+func TestOpenMeteoMock(t *testing.T) {
+	c := DefaultConfig
+	if err := config.NewConfig().Unpack(&c); err != nil {
+		t.Fatal(err)
+	}
+	if c.OpenMeteo.Mock.Enabled || c.OpenMeteo.Mock.Scenario != "mixed" || c.OpenMeteo.Mock.Cycle != 6*time.Hour {
+		t.Errorf("mock defaults: %+v", c.OpenMeteo.Mock)
+	}
+
+	raw, err := config.NewConfigFrom(`
+openmeteo:
+  mock:
+    enabled: true
+    scenario: trapped
+    cycle: 30m
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c = DefaultConfig
+	if err := raw.Unpack(&c); err != nil {
+		t.Fatal(err)
+	}
+	if !c.OpenMeteo.Mock.Enabled || c.OpenMeteo.Mock.Scenario != "trapped" || c.OpenMeteo.Mock.Cycle != 30*time.Minute {
+		t.Errorf("mock settings not unpacked: %+v", c.OpenMeteo.Mock)
+	}
+
+	bad, _ := config.NewConfigFrom(`openmeteo.mock.scenario: stormy`)
+	c = DefaultConfig
+	if err := bad.Unpack(&c); err == nil {
+		t.Error("an unknown mock scenario should be rejected")
+	}
+}

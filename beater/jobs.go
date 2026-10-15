@@ -270,6 +270,11 @@ func (bt *tropobeat) runWeather(ctx context.Context) error {
 	ductEvents, notable, insufficient := ductingEvents(locs, bt.config.Ducting.Publish, snap.RunID, start)
 	events = append(events, ductEvents...)
 
+	// Mark simulated data so it can be told apart from real weather.
+	if bt.mock != nil {
+		tagMock(events)
+	}
+
 	// Publish all events, both weather and ducting.
 	bt.client.PublishAll(events)
 

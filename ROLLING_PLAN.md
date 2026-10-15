@@ -185,6 +185,7 @@ Turns the weather at each path point into refractivity, layer gradients, ducts a
 
 | Item | Status | Notes |
 |---|---|---|
+| Mock weather for dashboard building | ✅ | Tropobeat can run with simulated weather instead of Open-Meteo (`openmeteo.mock`), while everything else stays real. The simulated weather is built so the ducting calculation produces each state on purpose: normal, super-refractive, a thin duct that traps nothing, an elevated duct, a duct that traps UHF only, and a thick duct that traps VHF too. A mixed mode moves every site through all states on a set cycle, varying with place so different sites differ at the same time. Simulated events are tagged `mock-weather`. No Open-Meteo calls are made. |
 | Map of LRFs, transmitters and co-channel paths | 📋 | Co-channel paths drawn as lines, highlighting those with active ducting. |
 | Event timeline and correlation dashboard | 📋 | Telemetry overlaid with the ducting index for each event. |
 
@@ -293,3 +294,4 @@ Turns the weather at each path point into refractivity, layer gradients, ducts a
 | 2026-10-13 | Architecture diagram redrawn for readability. Added `openmeteo.enabled` to turn weather polling off and run co-channel discovery only. |
 | 2026-10-14 | Weather events now carry the path line and are timestamped at fetch time, with the forecast hour kept separately. Code comments added to the discovery and scheduling code. |
 | 2026-10-14 | Phase 3 built: the ducting calculation (above-ground profile, refractivity, layer classes, duct types and strength, likelihood score, duct trapping per channel, path ducting index), run on every weather poll. Results published as a summary on `weather` events and in full as the new `ducting` metricset, with `ducting.publish` to choose all or notable locations. Added [DUCTING.md](DUCTING.md), the technical reference for scoring, classes and fields. Q16–Q19 added; Q10 extended. Calibration against real soundings is next. |
+| 2026-10-15 | Added mock weather (`openmeteo.mock`) for building dashboards: simulated weather that produces every ducting state, including trapping, with a mixed mode that cycles each site through all states. Simulated events are tagged `mock-weather`. README updated. |

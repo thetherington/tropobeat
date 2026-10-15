@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/elastic/beats/v7/libbeat/beat"
 	"github.com/elastic/elastic-agent-libs/logp"
 	"github.com/elastic/elastic-agent-libs/mapstr"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/thetherington/tropobeat/internal/ducting"
 	"github.com/thetherington/tropobeat/internal/lrf"
 	"github.com/thetherington/tropobeat/internal/openmeteo"
+	"github.com/thetherington/tropobeat/internal/openmeteo/mock"
 )
 
 func testPath() cochannel.Path {
@@ -374,5 +376,37 @@ func TestDuctingEventInsufficientData(t *testing.T) {
 	}
 	if _, err := f.GetValue("tropobeat.ducting.score"); err == nil {
 		t.Error("insufficient_data should have no score")
+	}
+}
+
+func TestMockWeatherServer(t *testing.T) {
+	cfg := mock.DefaultConfig
+	cfg.Enabled = true
+	srv, url, err := startMockWeather(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	client, err := openmeteo.New(openmeteo.Config{URL: url, MaxRetries: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := client.Profiles(context.Background(), []openmeteo.Coordinate{{Lat: 39.47, Lon: -87.40}}, time.Now())
+	if err != nil || len(profiles) != 1 || len(profiles[0].Levels) != 8 {
+		t.Fatalf("profiles from mock: %d, err %v", len(profiles), err)
+	}
+
+	stopMockWeather(srv)
+	if _, err := client.Profiles(context.Background(), []openmeteo.Coordinate{{Lat: 39.47, Lon: -87.40}}, time.Now()); err == nil {
+		t.Error("requests should fail once the mock server is stopped")
+	}
+	stopMockWeather(nil) // safe without a server
+}
+
+func TestTagMock(t *testing.T) {
+	events := []beat.Event{{Fields: mapstr.M{"metricset": mapstr.M{"name": "weather"}}}}
+	tagMock(events)
+	if tags, _ := events[0].Fields["tags"].([]string); len(tags) != 1 || tags[0] != "mock-weather" {
+		t.Errorf("tags = %v", events[0].Fields["tags"])
 	}
 }

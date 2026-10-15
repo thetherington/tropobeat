@@ -39,6 +39,7 @@ Tropobeat's goal is to move operations from reactive troubleshooting to proactiv
 | Daily co-channel discovery: same-channel transmitters within 200 miles of each LRF, excluding its own station, with geodesic path midpoints | ✅ |
 | Hourly weather for every path point from the Open-Meteo API | ✅ |
 | Ducting calculation on every weather poll: refractivity, layer classes, ducts, a ducting score per point and a ducting index per path | ✅ (calibration pending) |
+| Mock weather that simulates every ducting state, for building dashboards | ✅ |
 | Correlating ducting with MER, Pre-FEC BER and RF power drops | 📋 planned (Phases 4–5) |
 | Forecasting at-risk LRFs, alerting, inSITE dashboards | 📋 planned (Phases 6–7) |
 
@@ -244,6 +245,31 @@ At start-up tropobeat checks the LRF list and stops with a clear message if the 
 ./tropobeat -e -E 'tropobeat.lrf_sites=["TERH","PROV","BOS"]'
 ```
 
+### Mock weather for dashboard building
+
+Real weather rarely ducts on demand. To build and test dashboards, tropobeat can run normally (real LRFs, demod channels, FCC transmitters and co-channel discovery) with **simulated weather** instead of Open-Meteo:
+
+```bash
+./tropobeat -e -E tropobeat.openmeteo.mock.enabled=true \
+  -E 'tropobeat.lrf_sites=["TERH","PROV","BOS"]' -E tropobeat.period=1m -E tropobeat.openmeteo.mock.cycle=10m
+```
+
+Tropobeat then serves Open-Meteo-format weather from a small built-in server on `127.0.0.1` and fetches it exactly as it would the real API, so the `weather` and `ducting` events have the same shape as in production. No Open-Meteo calls are made and no API key is needed. Tropobeat logs a warning at start-up, and every `weather` and `ducting` event is tagged **`mock-weather`**, so simulated data is easy to filter out or delete (`tags: mock-weather`). `cochannel` events are real and untagged.
+
+The weather is built so the ducting calculation lands on a chosen outcome:
+
+| `scenario` | Result |
+|---|---|
+| `mixed` (default) | Every location passes through all of the states below over one `cycle`. The state changes smoothly with position, so different sites show different states at the same time, and a path's LRF, midpoint and transmitter are similar but not identical. Works with any number of LRFs. |
+| `normal` | Normal air: score 0, no ducts. |
+| `super_refractive` | Super-refractive: score about 0.1–0.55, no ducts. |
+| `ducting` | A thin surface duct (about 40 m): `ducting` class, but too thin to trap any TV channel. |
+| `elevated` | An elevated duct a few hundred metres up that traps UHF. |
+| `trapped_uhf` | A surface duct of about 120 m that traps UHF but not VHF. |
+| `trapped` | A thick surface duct (about 360 m) that traps every channel, RF 2 upwards; score about 0.9–1. |
+
+With `period: 1m` and `cycle: 10m`, each site goes through every state in about ten minutes. All mock locations are at sea level, so no levels are dropped as underground.
+
 ## 8. Configuration
 
 Settings live under `tropobeat:` in `tropobeat.yml`. `tropobeat.reference.yml` lists every setting with comments. Elasticsearch output, logging and other general settings are the standard Beats ones.
@@ -292,6 +318,9 @@ Separate from tropobeat's output, so the reference data can live on a different 
 | `timeout` | `10s` | Timeout for each request. |
 | `batch_delay` | `100ms` | Pause between requests. |
 | `max_retries` | `2` | Retries after a rate limit, server or network error (including timeouts). |
+| `mock.enabled` | `false` | Serve simulated weather instead of calling Open-Meteo; see [Mock weather](#mock-weather-for-dashboard-building). |
+| `mock.scenario` | `mixed` | `mixed`, `normal`, `super_refractive`, `ducting`, `elevated`, `trapped_uhf` or `trapped`. |
+| `mock.cycle` | `6h` | With `mixed`: how long each location takes to pass through every state. |
 | `coordinate_precision` | `0` (off) | Round coordinates before de-duplicating, so nearby path points are fetched once. `0.01`° (about 1 km) saved about 8% of locations across the network, `0.05`° about 17%. Values above `0.1` may merge points in different weather-model grid cells. |
 
 ### `ducting`: ducting calculation
@@ -364,6 +393,7 @@ OPENMETEO_LIVE=1 go test -run TestLive ./internal/openmeteo/
 | `internal/fcc/` | FCC TV Query client and parser |
 | `internal/cochannel/` | Demod channel query, co-channel discovery, geodesic midpoints |
 | `internal/openmeteo/` | Open-Meteo client (fetches and organises weather only) |
+| `internal/openmeteo/mock/` | Simulated Open-Meteo weather for dashboard building |
 | `internal/ducting/` | Refractivity, layers, ducts and scores |
 | `internal/elastic/` | Shared Elasticsearch client and helpers |
 | `_meta/` | Field definitions and config templates (source for `mage update`) |

@@ -12,6 +12,7 @@ import (
 	"github.com/thetherington/tropobeat/internal/fcc"
 	"github.com/thetherington/tropobeat/internal/lrf"
 	"github.com/thetherington/tropobeat/internal/openmeteo"
+	"github.com/thetherington/tropobeat/internal/openmeteo/mock"
 )
 
 type Config struct {
@@ -41,6 +42,9 @@ type OpenMeteoConfig struct {
 	// co-channel discovery and makes no Open-Meteo calls.
 	Enabled          bool `config:"enabled"`
 	openmeteo.Config `config:",inline"`
+	// Mock serves simulated weather instead of calling Open-Meteo, for
+	// building and testing dashboards.
+	Mock mock.Config `config:"mock"`
 }
 
 // CochannelConfig configures the daily co-channel discovery job.
@@ -67,6 +71,6 @@ var DefaultConfig = Config{
 		Radius:      "200mi",
 		DemodWindow: 24 * time.Hour,
 	},
-	OpenMeteo: OpenMeteoConfig{Enabled: true, Config: openmeteo.DefaultConfig},
+	OpenMeteo: OpenMeteoConfig{Enabled: true, Config: openmeteo.DefaultConfig, Mock: mock.DefaultConfig},
 	Ducting:   ducting.DefaultConfig,
 }
