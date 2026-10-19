@@ -37,6 +37,7 @@ require (
 	github.com/magefile/mage v1.15.0
 	github.com/mitchellh/gox v1.0.1
 	github.com/pierrre/gotestcover v0.0.0-20160517101806-924dca7d15f0
+	github.com/rabbitmq/amqp091-go v1.14.0
 	github.com/tidwall/geodesic v1.52.4
 	github.com/tsg/go-daemon v0.0.0-20200207173439-e704b93fd89b
 	golang.org/x/lint v0.0.0-20241112194109-818c5a804067

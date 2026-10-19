@@ -11080,8 +11080,9 @@
   title: tropobeat
   description: >
     Fields published by tropobeat: co-channel paths (metricset cochannel), the
-    weather along them (metricset weather) and the ducting analysis of each
-    weather location (metricset ducting). See DUCTING.md for how ducting
+    weather along them (metricset weather), the ducting analysis of each
+    weather location (metricset ducting), and the 7-day baseline of each
+    demod instance (metricset baseline). See DUCTING.md for how ducting
     results are calculated and read.
   fields:
     - name: metricset
@@ -11090,7 +11091,7 @@
         - name: name
           type: keyword
           description: >
-            The kind of event: cochannel, weather or ducting.
+            The kind of event: cochannel, weather, ducting or baseline.
 
     - name: tropobeat.cochannel
       type: group
@@ -11364,3 +11365,94 @@
               description: >
                 Duct strength: M at the base of the trapping layer minus M at
                 its top, M-units.
+
+    - name: tropobeat.baseline
+      type: group
+      description: >
+        The normal Pre-FEC BER and MER of one demod instance on one RF channel:
+        the medians of its locked reports over the baseline window (whole UTC
+        days up to the start of the run's day). Published by the daily
+        baseline run; use the latest run_id. Live telemetry is judged against
+        these values.
+      fields:
+        - name: run_id
+          type: keyword
+          description: Baseline run this record belongs to. Use the latest run.
+        - name: instance
+          type: group
+          description: >
+            The demod input: the demod frame's host IP, the card slot and the
+            input on the card.
+          fields:
+            - name: id
+              type: keyword
+              description: Instance identifier, "<host ip>/<slot>/<input>".
+            - name: host_ip
+              type: ip
+            - name: slot
+              type: integer
+            - name: input
+              type: integer
+        - name: lrf
+          type: group
+          fields:
+            - name: code
+              type: keyword
+              description: LRF code (the demod's s_lrf_id, upper-cased).
+            - name: location
+              type: geo_point
+              description: LRF location, when the code is in the LRF list.
+        - name: demod_side
+          type: keyword
+          description: Demod side, A or B.
+        - name: rf_channel
+          type: integer
+        - name: card_label
+          type: keyword
+        - name: frame_label
+          type: keyword
+        - name: tags
+          type: keyword
+          description: Input tags seen in the window.
+        - name: call_signs
+          type: keyword
+          description: Call signs parsed from the tags.
+        - name: status
+          type: keyword
+          description: >
+            ok (used to judge live telemetry), insufficient (fewer than
+            baseline.min_samples locked reports), invalid (saturated or
+            missing BER median) or no_station (the tags name no station, e.g.
+            spare inputs).
+        - name: samples
+          type: long
+          description: Locked reports the medians cover.
+        - name: window
+          type: group
+          fields:
+            - name: start
+              type: date
+              description: First locked report in the window.
+            - name: end
+              type: date
+              description: Last locked report in the window.
+            - name: days
+              type: float
+              description: Days between the first and last report.
+        - name: ber
+          type: group
+          fields:
+            - name: median
+              type: double
+              description: Median Pre-FEC BER.
+            - name: effective
+              type: double
+              description: >
+                The BER a spike is measured against: the median, or
+                baseline.ber_floor when the median is lower (usually 0).
+        - name: mer
+          type: group
+          fields:
+            - name: median_db
+              type: float
+              description: Median MER, dB.

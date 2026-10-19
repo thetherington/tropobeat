@@ -15671,7 +15671,7 @@ type: text
 [[exported-fields-tropobeat]]
 == tropobeat fields
 
-Fields published by tropobeat: co-channel paths (metricset cochannel), the weather along them (metricset weather) and the ducting analysis of each weather location (metricset ducting). See DUCTING.md for how ducting results are calculated and read.
+Fields published by tropobeat: co-channel paths (metricset cochannel), the weather along them (metricset weather), the ducting analysis of each weather location (metricset ducting), and the 7-day baseline of each demod instance (metricset baseline). See DUCTING.md for how ducting results are calculated and read.
 
 
 
@@ -15679,7 +15679,7 @@ Fields published by tropobeat: co-channel paths (metricset cochannel), the weath
 *`metricset.name`*::
 +
 --
-The kind of event: cochannel, weather or ducting.
+The kind of event: cochannel, weather, ducting or baseline.
 
 
 type: keyword
@@ -16587,6 +16587,203 @@ type: float
 --
 Duct strength: M at the base of the trapping layer minus M at its top, M-units.
 
+
+type: float
+
+--
+
+[float]
+=== tropobeat.baseline
+
+The normal Pre-FEC BER and MER of one demod instance on one RF channel: the medians of its locked reports over the baseline window (whole UTC days up to the start of the run's day). Published by the daily baseline run; use the latest run_id. Live telemetry is judged against these values.
+
+
+
+*`tropobeat.baseline.run_id`*::
++
+--
+Baseline run this record belongs to. Use the latest run.
+
+type: keyword
+
+--
+
+[float]
+=== instance
+
+The demod input: the demod frame's host IP, the card slot and the input on the card.
+
+
+
+*`tropobeat.baseline.instance.id`*::
++
+--
+Instance identifier, "<host ip>/<slot>/<input>".
+
+type: keyword
+
+--
+
+*`tropobeat.baseline.instance.host_ip`*::
++
+--
+type: ip
+
+--
+
+*`tropobeat.baseline.instance.slot`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.baseline.instance.input`*::
++
+--
+type: integer
+
+--
+
+
+*`tropobeat.baseline.lrf.code`*::
++
+--
+LRF code (the demod's s_lrf_id, upper-cased).
+
+type: keyword
+
+--
+
+*`tropobeat.baseline.lrf.location`*::
++
+--
+LRF location, when the code is in the LRF list.
+
+type: geo_point
+
+--
+
+*`tropobeat.baseline.demod_side`*::
++
+--
+Demod side, A or B.
+
+type: keyword
+
+--
+
+*`tropobeat.baseline.rf_channel`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.baseline.card_label`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.baseline.frame_label`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.baseline.tags`*::
++
+--
+Input tags seen in the window.
+
+type: keyword
+
+--
+
+*`tropobeat.baseline.call_signs`*::
++
+--
+Call signs parsed from the tags.
+
+type: keyword
+
+--
+
+*`tropobeat.baseline.status`*::
++
+--
+ok (used to judge live telemetry), insufficient (fewer than baseline.min_samples locked reports), invalid (saturated or missing BER median) or no_station (the tags name no station, e.g. spare inputs).
+
+
+type: keyword
+
+--
+
+*`tropobeat.baseline.samples`*::
++
+--
+Locked reports the medians cover.
+
+type: long
+
+--
+
+
+*`tropobeat.baseline.window.start`*::
++
+--
+First locked report in the window.
+
+type: date
+
+--
+
+*`tropobeat.baseline.window.end`*::
++
+--
+Last locked report in the window.
+
+type: date
+
+--
+
+*`tropobeat.baseline.window.days`*::
++
+--
+Days between the first and last report.
+
+type: float
+
+--
+
+
+*`tropobeat.baseline.ber.median`*::
++
+--
+Median Pre-FEC BER.
+
+type: double
+
+--
+
+*`tropobeat.baseline.ber.effective`*::
++
+--
+The BER a spike is measured against: the median, or baseline.ber_floor when the median is lower (usually 0).
+
+
+type: double
+
+--
+
+
+*`tropobeat.baseline.mer.median_db`*::
++
+--
+Median MER, dB.
 
 type: float
 

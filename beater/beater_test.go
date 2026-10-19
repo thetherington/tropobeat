@@ -175,8 +175,8 @@ func TestRegisterJobsWeatherDisabled(t *testing.T) {
 		weather openmeteo.Client
 		want    []string
 	}{
-		{"weather on", mustClient(t), []string{"cochannel", "weather"}},
-		{"weather off", nil, []string{"cochannel"}},
+		{"weather on", mustClient(t), []string{"baseline", "cochannel", "weather"}},
+		{"weather off", nil, []string{"baseline", "cochannel"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, err := newScheduler(logp.NewLogger("test"))
@@ -187,6 +187,7 @@ func TestRegisterJobsWeatherDisabled(t *testing.T) {
 
 			bt := &tropobeat{ctx: context.Background(), logger: logp.NewLogger("test"), scheduler: s, weather: tc.weather}
 			bt.config.Cochannel.Schedule = "0 3 * * *"
+			bt.config.Baseline.Schedule = "30 3 * * *"
 			bt.config.Period = time.Hour
 			if err := bt.registerJobs(); err != nil {
 				t.Fatal(err)

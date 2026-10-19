@@ -9,6 +9,7 @@ import (
 
 	"github.com/thetherington/tropobeat/internal/cochannel"
 	"github.com/thetherington/tropobeat/internal/ducting"
+	"github.com/thetherington/tropobeat/internal/lrf"
 	"github.com/thetherington/tropobeat/internal/openmeteo"
 )
 
@@ -17,6 +18,7 @@ const (
 	metricsetCochannel = "cochannel"
 	metricsetWeather   = "weather"
 	metricsetDucting   = "ducting"
+	metricsetBaseline  = "baseline"
 )
 
 // cochannelEvent describes one co-channel path found by a discovery run.
@@ -50,6 +52,53 @@ func cochannelEvent(p cochannel.Path, runID string, at time.Time) beat.Event {
 				"bearing_deg": p.BearingDeg,
 				"path":        pathLine(p),
 			}},
+		},
+	}
+}
+
+// baselineEvent describes one demod instance's baseline from a baseline run.
+// site is the LRF the instance belongs to, or nil when its LRF ID isn't in
+// the LRF list (the location is then left out).
+func baselineEvent(b Baseline, site *lrf.LRF, runID string, at time.Time) beat.Event {
+	l := mapstr.M{"code": b.LRF}
+	if site != nil {
+		l["location"] = mapstr.M{"lat": site.Latitude, "lon": site.Longitude}
+	}
+	window := mapstr.M{}
+	if !b.From.IsZero() && !b.To.IsZero() {
+		window["start"] = b.From
+		window["end"] = b.To
+		window["days"] = b.To.Sub(b.From).Hours() / 24
+	}
+	f := mapstr.M{
+		"run_id": runID,
+		"instance": mapstr.M{
+			"id":      b.Instance.String(),
+			"host_ip": b.Instance.HostIP,
+			"slot":    b.Instance.Slot,
+			"input":   b.Instance.Input,
+		},
+		"lrf":         l,
+		"demod_side":  b.Side,
+		"rf_channel":  b.RFChannel,
+		"card_label":  b.CardLabel,
+		"frame_label": b.FrameLabel,
+		"tags":        b.Tags,
+		"call_signs":  b.CallSigns,
+		"status":      b.Status,
+		"samples":     b.Samples,
+		"window":      window,
+		"ber": mapstr.M{
+			"median":    b.MedianBER,
+			"effective": b.EffectiveBER,
+		},
+		"mer": mapstr.M{"median_db": b.MedianMER},
+	}
+	return beat.Event{
+		Timestamp: at,
+		Fields: mapstr.M{
+			"metricset": mapstr.M{"name": metricsetBaseline},
+			"tropobeat": mapstr.M{"baseline": f},
 		},
 	}
 }

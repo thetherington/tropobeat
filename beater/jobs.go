@@ -256,6 +256,13 @@ func (bt *tropobeat) runWeather(ctx context.Context) error {
 	// Analyse each unique location once, even when several paths share it.
 	locs := analyseLocations(complete, bt.config.Ducting)
 
+	// Keep each path's ducting result in memory for the live telemetry
+	// checks. A poll where nothing was fetched leaves the previous results,
+	// which stop counting once they are older than 2 × period.
+	if len(complete) > 0 {
+		bt.ducting.swap(start, pathDuctingFrom(complete, locs))
+	}
+
 	// One weather event per group, then the ducting events chosen by
 	// ducting.publish. Both go out in one call.
 	events := make([]beat.Event, 0, len(complete)+len(locs))
