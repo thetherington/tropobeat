@@ -45,10 +45,12 @@ type tropobeat struct {
 	scheduler gocron.Scheduler
 	// state holds the latest discovery snapshot.
 	state atomic.Pointer[snapshot]
-	// weatherJob is the scheduled weather poll. Its first run is triggered
-	// by the end of the first discovery run (see firstPoll).
-	weatherJob gocron.Job
-	firstPoll  sync.Once
+	// baselineJob and weatherJob are the scheduled baseline run and weather
+	// poll. Their first runs are triggered by the end of the first discovery
+	// run (see afterDiscovery), so both start with the co-channel paths.
+	baselineJob    gocron.Job
+	weatherJob     gocron.Job
+	afterDiscovery sync.Once
 	// mock serves simulated weather when openmeteo.mock is enabled.
 	mock *http.Server
 
@@ -244,11 +246,13 @@ func (bt *tropobeat) registerJobs() error {
 		return fmt.Errorf("scheduling cochannel job: %w", err)
 	}
 
-	// Baselines are computed on their cron schedule and once at start-up.
-	_, err = bt.scheduler.NewJob(
+	// Baselines are computed on their cron schedule, and once at start-up
+	// when the first discovery run ends (startAfterDiscoveryOnce), so the
+	// published baselines list their co-channel paths from the outset.
+	bt.baselineJob, err = bt.scheduler.NewJob(
 		gocron.CronJob(bt.config.Baseline.Schedule, false),
 		gocron.NewTask(bt.runBaseline),
-		bt.jobOptions("baseline", gocron.WithStartAt(gocron.WithStartImmediately()))...,
+		bt.jobOptions("baseline")...,
 	)
 	if err != nil {
 		return fmt.Errorf("scheduling baseline job: %w", err)
@@ -259,8 +263,8 @@ func (bt *tropobeat) registerJobs() error {
 	}
 
 	// The weather poll runs every period. It isn't started immediately:
-	// startWeatherOnce runs it when the first discovery run ends, so its
-	// first poll covers the co-channel paths rather than only the LRFs.
+	// startAfterDiscoveryOnce runs it when the first discovery run ends, so
+	// its first poll covers the co-channel paths rather than only the LRFs.
 	bt.weatherJob, err = bt.scheduler.NewJob(
 		gocron.DurationJob(bt.config.Period),
 		gocron.NewTask(bt.runWeather),
@@ -287,16 +291,19 @@ func (bt *tropobeat) jobOptions(name string, extra ...gocron.JobOption) []gocron
 	return append(opts, extra...)
 }
 
-// startWeatherOnce runs the first weather poll. It is called when the first
-// discovery run ends, whether it succeeded (paths available) or failed (the
-// poll falls back to the LRFs only).
-func (bt *tropobeat) startWeatherOnce() {
-	bt.firstPoll.Do(func() {
-		if bt.weatherJob == nil {
-			return
-		}
-		if err := bt.weatherJob.RunNow(); err != nil {
-			bt.logger.Errorf("Starting first weather poll: %v", err)
+// startAfterDiscoveryOnce runs the first baseline run and weather poll. It is
+// called when the first discovery run ends, whether it succeeded (paths
+// available) or failed (baselines are published without paths, and the poll
+// falls back to the LRFs only).
+func (bt *tropobeat) startAfterDiscoveryOnce() {
+	bt.afterDiscovery.Do(func() {
+		for name, j := range map[string]gocron.Job{"baseline run": bt.baselineJob, "weather poll": bt.weatherJob} {
+			if j == nil {
+				continue
+			}
+			if err := j.RunNow(); err != nil {
+				bt.logger.Errorf("Starting first %s: %v", name, err)
+			}
 		}
 	})
 }

@@ -127,9 +127,13 @@ func (bt *tropobeat) runBaseline(ctx context.Context) error {
 
 	// With lrf_sites set, limit the query to those LRFs. The snapshot holds
 	// the selected LRFs (seeded in Run, refreshed by discovery).
-	var lrfs []lrf.LRF
+	var (
+		lrfs           []lrf.LRF
+		paths          []cochannel.Path
+		discoveryRunID string
+	)
 	if snap := bt.state.Load(); snap != nil {
-		lrfs = snap.LRFs
+		lrfs, paths, discoveryRunID = snap.LRFs, snap.Paths, snap.RunID
 	}
 	var sites []string
 	if len(bt.config.LRFSites) > 0 {
@@ -153,13 +157,22 @@ func (bt *tropobeat) runBaseline(ctx context.Context) error {
 		for _, l := range lrfs {
 			locs[demod.NormalizeLRF(l.Code)] = l
 		}
+		// Each baseline lists the co-channel paths on its LRF and channel
+		// from the latest discovery run. At start-up the first baseline run
+		// can finish before discovery, and then lists none.
+		byChannel := map[demod.ChannelKey][]cochannel.Path{}
+		for _, p := range paths {
+			k := demod.ChannelKey{LRF: demod.NormalizeLRF(p.LRFCode), RFChannel: p.RFChannel}
+			byChannel[k] = append(byChannel[k], p)
+		}
 		events := make([]beat.Event, 0, len(baselines))
 		for _, b := range baselines {
 			var site *lrf.LRF
 			if l, ok := locs[b.LRF]; ok {
 				site = &l
 			}
-			events = append(events, baselineEvent(b, site, runID, start))
+			onChannel := byChannel[demod.ChannelKey{LRF: b.LRF, RFChannel: b.RFChannel}]
+			events = append(events, baselineEvent(b, site, onChannel, discoveryRunID, runID, start))
 		}
 		bt.client.PublishAll(events)
 	}

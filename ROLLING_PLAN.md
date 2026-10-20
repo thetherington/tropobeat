@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Last updated | 2026-10-19 |
+| Last updated | 2026-10-20 |
 | Current phase | Phase 4a (RF telemetry foundation) built; Phase 4b (correlation engine) next |
 | Platform | Evertz Magnum Analytics (inSITE), Elasticsearch, RabbitMQ, Open-Meteo API |
 
@@ -64,11 +64,11 @@ The aim is to move operations from reactive troubleshooting to proactive, data-d
                   ▼
        ┌─────────────────────┐
        │  Hourly weather     │◄──────── batched requests ──────── Open-Meteo API
-       │  poll               │
-       └──────────┬──────────┘
-                  │  weather per path point
-                  ▼
-       ┌─────────────────────┐             ┌─────────────────────────────┐
+       │  poll               │                                        ┌┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┐
+       └──────────┬──────────┘                                        ┆  Demod pollers        ┆
+                  │  weather per path point                           ┆  (outside tropobeat)  ┆
+                  ▼                                                   └┄┄┄┄┄┄┄┄┄┄┄┬┄┄┄┄┄┄┄┄┄┄┄┘
+       ┌─────────────────────┐             ┌─────────────────────────────┐        ▼
        │  Ducting            │             │  Live demod reports         │◄── RabbitMQ
        │  calculation        │             │  (MER, Pre-FEC BER, power,  │    exchange
        └──────────┬──────────┘             │  lock), ~1/min per input    │
@@ -227,7 +227,10 @@ A correlation engine inside tropobeat that evaluates each demod report as it arr
 | Item | Status | Notes |
 |---|---|---|
 | Mock weather for dashboard building | ✅ | Tropobeat can run with simulated weather instead of Open-Meteo (`openmeteo.mock`), while everything else stays real. The simulated weather is built so the ducting calculation produces each state on purpose: normal, super-refractive, a thin duct that traps nothing, an elevated duct, a duct that traps UHF only, and a thick duct that traps VHF too. A mixed mode moves every site through all states on a set cycle, varying with place so different sites differ at the same time. Simulated events are tagged `mock-weather`. No Open-Meteo calls are made. |
-| Map of LRFs, transmitters and co-channel paths | 📋 | Co-channel paths drawn as lines, highlighting those with active ducting. |
+| Shared fields across all results | ✅ | Every published result (co-channel paths, weather, ducting and baselines) now carries the same identifying fields: LRF, co-channel path, RF channel, TV band (low VHF, high VHF, UHF), the co-channel transmitters (call sign and FCC facility ID), the LRF's own stations, and the discovery run. Weather and ducting results also share the forecast hour. One dashboard filter (an LRF, a channel, a band, a station) therefore works on every panel and map layer at once, and a single path ID leads from a map line to its weather, its ducting detail and the demod inputs it could interfere with. Each baseline lists the co-channel paths on its LRF and channel: the transmitters that could interfere with that input. The fields replace the per-result fields they duplicated. Verified on the test cluster. |
+| Ducting state | ✅ | A four-step summary on every weather and ducting result: normal, super-refractive, ducting (a ducting layer, but no duct thick enough to trap the channel) and trapping (a duct traps the channel), also given as a level from 0 to 3 so dashboards can show the highest level over an hour or across an LRF's paths. Unlike the path ducting index, one strong point is enough to raise it. Rules in [DUCTING.md](DUCTING.md#ducting-state); the thresholds follow the score bands and will move with their calibration (Q16, Q18). |
+| Ducting monitoring dashboard | 📋 | One dashboard driven by an LRF selector: headline figures (LRFs and paths ducting now), a map, a network heat map (LRFs against time) to pick a site, and a heat map for the chosen LRF (its co-channel paths against time, coloured by ducting state), with the ducting detail and, from Phase 4b, MER and BER on the same time axis. A forecast extension past "now" follows in Phase 6. |
+| Map of LRFs, transmitters and co-channel paths | 📋 | Co-channel paths drawn as lines, coloured by ducting state, with trapping paths emphasised; ducting points along each path; LRFs coloured by their highest current state; transmitters shown for the paths that are ducting. |
 | Event timeline and correlation dashboard | 📋 | Telemetry overlaid with the ducting index for each event. |
 
 ### Phase 8: Hardening & deployment 📋
@@ -262,6 +265,7 @@ A correlation engine inside tropobeat that evaluates each demod report as it arr
 | Q24 | How should LRFs that are down for long periods be shown? Six LRFs were entirely unlocked in the 2026-10-13 sample; with no locked reports they get no baseline and are ignored by the rules. | Phase 4b/4c |
 | Q25 | Should a demod input (or a whole LRF) that stops reporting altogether count as an outage? | Phase 4b |
 | Q26 | Threshold calibration and flapping channels. The test data is one real day (2026-10-13) copied across 12 days, so it shows how the rules behave on that day but can't tell a channel that is marginal every day from one that had a single bad day. On that day, without the ducting check, the BER rule would raise 1,749 three-minute episodes on 145 inputs (57 with 10 or more), and the MER rule 1,115 on 203. Real multi-day data is needed before tuning thresholds or adding special handling. Links to Q16. | Phase 4b tuning |
+| Q27 | Formal conformance with ITU-R P.453. The ducting calculation follows ITU-R P.453 for refractivity, modified refractivity and the duct condition, but works out water vapour pressure with the widely used Magnus formula rather than the recommendation's own formula (which adds a small pressure correction). The two agree to within about 1.2 N-units, too little to change any class, duct or score. Should the calculation switch to the recommendation's vapour-pressure formula (over water at all temperatures), so results can be described as following ITU-R P.453 in full? Links to Q10. | Reporting and documentation; no effect on results |
 
 ## 5. Decisions
 
@@ -319,6 +323,11 @@ A correlation engine inside tropobeat that evaluates each demod report as it arr
 | 2026-10-19 | The A and B demods share one antenna feed | Given by inSITE. A+B agreement rules out a single-demod fault, but is not independent path evidence; dM/dh < 0 on a co-channel path is the environmental evidence. |
 | 2026-10-19 | dM/dh < 0 at a path point means its ducting class (a layer where modified refractivity falls with height), from the latest weather poll | The ducting calculation already classes every layer by its gradient; ducting results are hourly while telemetry is per minute, so each minute uses the latest poll. |
 | 2026-10-19 | The correlation engine evaluates reports as they arrive, in one worker that owns the live state (Phase 4b) | Correlation keeps up with the data, and a single owner needs no locking. |
+| 2026-10-20 | The identifying fields (LRF, path, channel, band, transmitters, own stations, discovery run, forecast hour) are the same on every result, always as lists, and replace the per-result fields | A dashboard filter applies to one field name, so different names per result left panels and map layers out of a filter. One set of names, and no duplicates, keeps the results small and unambiguous. |
+| 2026-10-20 | The co-channel transmitters and the LRF's own stations are kept in separate fields | One combined field would mix "this station is received here" with "this station could interfere here". |
+| 2026-10-20 | The discovery run and a baseline's own run are kept as separate fields | The two runs happen at different times; one shared name would mix them. |
+| 2026-10-20 | Tropobeat publishes a ducting state (normal, super-refractive, ducting, trapping), rather than leaving it to each dashboard to work out | The map, the heat maps and future alerts then use one rule, which changes in one place when the thresholds are calibrated. |
+| 2026-10-20 | At start-up, the first baseline run waits for the first discovery run, as the first weather poll does | Baselines then list their co-channel paths from the outset; discovery takes seconds, so the delay doesn't matter for live telemetry. |
 
 ## 6. Known issues
 
@@ -362,3 +371,4 @@ A correlation engine inside tropobeat that evaluates each demod report as it arr
 | 2026-10-14 | Phase 3 built: the ducting calculation (above-ground profile, refractivity, layer classes, duct types and strength, likelihood score, duct trapping per channel, path ducting index), run on every weather poll. Results published as a summary on `weather` events and in full as the new `ducting` metricset, with `ducting.publish` to choose all or notable locations. Added [DUCTING.md](DUCTING.md), the technical reference for scoring, classes and fields. Q16–Q19 added; Q10 extended. Calibration against real soundings is next. |
 | 2026-10-15 | Added mock weather (`openmeteo.mock`) for building dashboards: simulated weather that produces every ducting state, including trapping, with a mixed mode that cycles each site through all states. Simulated events are tagged `mock-weather`. README updated. |
 | 2026-10-19 | Phase 4 planned and split into 4a, 4b and 4c, using the supplied RF telemetry rules (baseline, dual-path confirmation, 3-minute hysteresis, outage exclusion). A week of test demod data (one real day copied) reviewed. Phase 4a built: the live demod stream from RabbitMQ with reconnects, daily 7-day baselines per demod input published as the new `baseline` metricset, baselines and ducting held in memory, and a replay tool. Verified against a local broker and the test cluster. Q20–Q26 added. |
+| 2026-10-20 | Shared identifying fields on every result (LRF, path, channel, band, transmitters, own stations, discovery run, forecast hour), replacing the per-result ones, and a published four-step ducting state. Baselines now list the co-channel paths that could interfere with them, and the first baseline run waits for discovery. Dashboard design (LRF-focused heat maps and map) added to Phase 7. Test cluster's tropobeat data and index template rebuilt and verified. README and DUCTING.md updated. |

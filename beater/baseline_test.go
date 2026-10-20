@@ -15,6 +15,7 @@ import (
 	"github.com/elastic/go-elasticsearch/v8"
 
 	tropoCfg "github.com/thetherington/tropobeat/config"
+	"github.com/thetherington/tropobeat/internal/cochannel"
 	"github.com/thetherington/tropobeat/internal/demod"
 	"github.com/thetherington/tropobeat/internal/ducting"
 	"github.com/thetherington/tropobeat/internal/lrf"
@@ -231,17 +232,17 @@ func TestBaselineEvent(t *testing.T) {
 		MedianBER: 0, EffectiveBER: 1e-6, MedianMER: 33, Status: BaselineOK,
 	}
 	site := &lrf.LRF{Code: "TERH", Latitude: 39.465533, Longitude: -87.4023442}
-	f := baselineEvent(b, site, "run1", at).Fields
+	paths := []cochannel.Path{testPath()}
+	f := baselineEvent(b, site, paths, "disc1", "run1", at).Fields
 	for k, want := range map[string]any{
 		"metricset.name":                      "baseline",
 		"tropobeat.baseline.run_id":           "run1",
 		"tropobeat.baseline.instance.id":      "10.91.10.1/9/1",
 		"tropobeat.baseline.instance.host_ip": "10.91.10.1",
 		"tropobeat.baseline.instance.slot":    9,
-		"tropobeat.baseline.lrf.code":         "TERH",
 		"tropobeat.baseline.lrf.location.lat": 39.465533,
 		"tropobeat.baseline.demod_side":       "A",
-		"tropobeat.baseline.rf_channel":       10,
+		"tropobeat.discovery_run_id":          "disc1",
 		"tropobeat.baseline.status":           "ok",
 		"tropobeat.baseline.samples":          9884,
 		"tropobeat.baseline.window.days":      3.5,
@@ -259,11 +260,26 @@ func TestBaselineEvent(t *testing.T) {
 		}
 	}
 
-	// An LRF not in the LRF list has no location.
-	f = baselineEvent(b, nil, "run1", at).Fields
+	checkLists(t, f, map[string]any{
+		"tropobeat.lrf_codes":              []string{"TERH"},
+		"tropobeat.rf_channels":            []int{10},
+		"tropobeat.path_ids":               []string{"TERH:1001:10"},
+		"tropobeat.transmitter_call_signs": []string{"WFAR-TV"},
+		"tropobeat.station_call_signs":     []string{"WTHI", "WTHI2"},
+	})
+
+	// An LRF not in the LRF list has no location. With no co-channel paths
+	// there are no path fields and no discovery run.
+	f = baselineEvent(b, nil, nil, "disc1", "run1", at).Fields
 	if _, err := f.GetValue("tropobeat.baseline.lrf.location"); err == nil {
 		t.Error("location set without an LRF site")
 	}
+	for _, k := range []string{"tropobeat.path_ids", "tropobeat.transmitter_call_signs", "tropobeat.discovery_run_id"} {
+		if _, err := f.GetValue(k); err == nil {
+			t.Errorf("%s set without co-channel paths", k)
+		}
+	}
+	checkLists(t, f, map[string]any{"tropobeat.lrf_codes": []string{"TERH"}})
 }
 
 func TestDuctingStore(t *testing.T) {

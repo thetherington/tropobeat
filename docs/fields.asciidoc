@@ -15686,6 +15686,115 @@ type: keyword
 
 --
 
+*`tropobeat.lrf_codes`*::
++
+--
+LRF codes (upper-case) the event is about: the path's LRF, the LRFs whose weather used a ducting location, or the baseline's LRF.
+
+
+type: keyword
+
+--
+
+*`tropobeat.path_ids`*::
++
+--
+Co-channel paths, "<lrf code>:<facility id>:<rf channel>": the path itself, the paths whose weather used a ducting location, or the paths on a baseline's LRF and channel. Not set for an LRF without paths.
+
+
+type: keyword
+
+--
+
+*`tropobeat.rf_channels`*::
++
+--
+RF channels of the path, the paths using a location, or the baseline.
+
+type: integer
+
+--
+
+*`tropobeat.bands`*::
++
+--
+TV bands of rf_channels: low_vhf (2-6), high_vhf (7-13) or uhf (14-69). Whether a duct traps a channel depends on its band.
+
+
+type: keyword
+
+--
+
+*`tropobeat.transmitter_call_signs`*::
++
+--
+Call signs of the co-channel transmitters on the paths: the stations that could interfere. Not the LRF's own stations.
+
+
+type: keyword
+
+--
+
+*`tropobeat.transmitter_facility_ids`*::
++
+--
+FCC facility IDs of those transmitters. Stable when a call sign changes.
+
+
+type: keyword
+
+--
+
+*`tropobeat.station_call_signs`*::
++
+--
+The LRF's own stations on the channel(s), from the demod input tags.
+
+
+type: keyword
+
+--
+
+*`tropobeat.discovery_run_id`*::
++
+--
+Co-channel discovery run the paths came from. Filter on the latest to see the current paths. A baseline's own run is tropobeat.baseline.run_id.
+
+
+type: keyword
+
+--
+
+*`tropobeat.forecast_time`*::
++
+--
+The hour the weather applies to (weather and ducting events). @timestamp is when it was fetched.
+
+
+type: date
+
+--
+
+*`tropobeat.ducting_state`*::
++
+--
+normal, super_refractive, ducting (a ducting layer, but no duct thick enough to trap the channel) or trapping (a duct traps the channel). On a weather event it covers the path's points; on a ducting event the location, trapping when a duct traps the channel of any path using it. Not set when nothing could be analysed. See DUCTING.md.
+
+
+type: keyword
+
+--
+
+*`tropobeat.ducting_level`*::
++
+--
+ducting_state as 0 (normal) to 3 (trapping), for taking the maximum over time or across paths.
+
+
+type: integer
+
+--
+
 [float]
 === tropobeat.cochannel
 
@@ -15693,42 +15802,6 @@ A co-channel path found by the daily discovery run: an LRF, a same-channel FCC t
 
 
 
-*`tropobeat.cochannel.run_id`*::
-+
---
-Discovery run this path belongs to. Use the latest run.
-
-type: keyword
-
---
-
-*`tropobeat.cochannel.path_id`*::
-+
---
-Path identifier, "<lrf code>:<facility id>:<rf channel>".
-
-type: keyword
-
---
-
-*`tropobeat.cochannel.rf_channel`*::
-+
---
-The RF channel shared by the LRF and the transmitter.
-
-type: integer
-
---
-
-
-*`tropobeat.cochannel.lrf.code`*::
-+
---
-LRF code.
-
-type: keyword
-
---
 
 *`tropobeat.cochannel.lrf.location`*::
 +
@@ -15739,29 +15812,6 @@ type: geo_point
 
 --
 
-*`tropobeat.cochannel.lrf.call_signs`*::
-+
---
-Call signs the LRF receives on this channel (from demod input tags).
-
-type: keyword
-
---
-
-
-*`tropobeat.cochannel.transmitter.call_sign`*::
-+
---
-type: keyword
-
---
-
-*`tropobeat.cochannel.transmitter.facility_id`*::
-+
---
-type: keyword
-
---
 
 *`tropobeat.cochannel.transmitter.service`*::
 +
@@ -15833,45 +15883,6 @@ Weather from Open-Meteo for one co-channel path (its LRF, midpoint and transmitt
 
 
 
-*`tropobeat.weather.run_id`*::
-+
---
-Discovery run the path came from.
-
-type: keyword
-
---
-
-*`tropobeat.weather.path_id`*::
-+
---
-Path identifier, or the LRF code for an LRF without paths.
-
-type: keyword
-
---
-
-*`tropobeat.weather.lrf_code`*::
-+
---
-type: keyword
-
---
-
-*`tropobeat.weather.rf_channel`*::
-+
---
-type: integer
-
---
-
-*`tropobeat.weather.transmitter_call_sign`*::
-+
---
-type: keyword
-
---
-
 *`tropobeat.weather.path`*::
 +
 --
@@ -15879,15 +15890,6 @@ The path as a GeoJSON LineString (LRF, midpoint, transmitter), so Kibana Maps ca
 
 
 type: geo_shape
-
---
-
-*`tropobeat.weather.forecast_time`*::
-+
---
-The hour the weather applies to.
-
-type: date
 
 --
 
@@ -16324,15 +16326,6 @@ Ducting analysis of one weather location for one poll: refractivity at each usab
 
 
 
-*`tropobeat.ducting.run_id`*::
-+
---
-Discovery run the paths came from.
-
-type: keyword
-
---
-
 *`tropobeat.ducting.profile_id`*::
 +
 --
@@ -16340,15 +16333,6 @@ The location the weather was requested for, as "lat,lon" (rounded when coordinat
 
 
 type: keyword
-
---
-
-*`tropobeat.ducting.forecast_time`*::
-+
---
-The hour the weather applies to.
-
-type: date
 
 --
 
@@ -16365,24 +16349,6 @@ type: geo_point
 Terrain elevation, metres.
 
 type: float
-
---
-
-*`tropobeat.ducting.path_ids`*::
-+
---
-Co-channel paths whose weather used this location.
-
-type: keyword
-
---
-
-*`tropobeat.ducting.lrf_codes`*::
-+
---
-LRFs whose paths (or own weather) used this location.
-
-type: keyword
 
 --
 
@@ -16646,15 +16612,6 @@ type: integer
 --
 
 
-*`tropobeat.baseline.lrf.code`*::
-+
---
-LRF code (the demod's s_lrf_id, upper-cased).
-
-type: keyword
-
---
-
 *`tropobeat.baseline.lrf.location`*::
 +
 --
@@ -16670,13 +16627,6 @@ type: geo_point
 Demod side, A or B.
 
 type: keyword
-
---
-
-*`tropobeat.baseline.rf_channel`*::
-+
---
-type: integer
 
 --
 
@@ -16697,16 +16647,8 @@ type: keyword
 *`tropobeat.baseline.tags`*::
 +
 --
-Input tags seen in the window.
+Input tags seen in the window. The call signs parsed from them are tropobeat.station_call_signs.
 
-type: keyword
-
---
-
-*`tropobeat.baseline.call_signs`*::
-+
---
-Call signs parsed from the tags.
 
 type: keyword
 

@@ -49,7 +49,7 @@ See the [rolling plan](ROLLING_PLAN.md) for detailed status, open questions and 
 
 ## 3. How it works
 
-![How tropobeat works: the LRF list, FCC transmitters, demod telemetry, Open-Meteo and the RabbitMQ demod exchange feed the cochannel, weather, baseline and demod stream jobs, which publish the cochannel, weather, ducting and baseline metricsets and keep ducting, baselines and live reports in memory for the planned correlation engine](docs/images/how-it-works.svg)
+![How tropobeat works: the LRF list, FCC transmitters, demod telemetry, Open-Meteo and the RabbitMQ demod exchange (fed by the demod pollers, outside tropobeat) feed the cochannel, weather, baseline and demod stream jobs, which publish the cochannel, weather, ducting and baseline metricsets and keep ducting, baselines and live reports in memory for the planned correlation engine](docs/images/how-it-works.svg)
 
 **Reference data.** Two `insert` commands load the reference data tropobeat works from: the LRF sites and the FCC transmitters. They run outside the beat (by hand or from cron) and can run while tropobeat is running. The demod telemetry is already collected by inSITE; tropobeat only reads it.
 
@@ -69,7 +69,7 @@ See the [rolling plan](ROLLING_PLAN.md) for detailed status, open questions and 
 3. Runs the **ducting calculation** on each location: refractivity, layer gradients and classes, ducts, and a 0–1 ducting score. Each path gets a ducting index and a flag for whether a duct is thick enough to trap its channel. See [DUCTING.md](DUCTING.md).
 4. Publishes one `weather` event per path (or LRF) and `ducting` events with the full analysis.
 
-**The `baseline` job** runs once at start-up and then daily (`baseline.schedule`, default 03:30 UTC, after discovery). It works out what is normal for every demod input: one baseline per **demod instance** (the demod frame's host IP, the card slot and the input) and RF channel, from the locked reports of the last 7 whole days (`baseline.window_days`, up to the start of today):
+**The `baseline` job** runs once at start-up, as soon as the first discovery run finishes, and then daily (`baseline.schedule`, default 03:30 UTC, after discovery). It works out what is normal for every demod input: one baseline per **demod instance** (the demod frame's host IP, the card slot and the input) and RF channel, from the locked reports of the last 7 whole days (`baseline.window_days`, up to the start of today):
 
 - the **median Pre-FEC BER**, and an **effective BER** of at least `baseline.ber_floor` (1e-6), because most inputs report a BER of exactly 0 and a spike needs something to be measured against;
 - the **median MER** in dB;
@@ -340,7 +340,7 @@ The score bands are initial values, to be calibrated against weather-balloon sou
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `schedule` | `"30 3 * * *"` | Cron expression (UTC). The job also runs once at start-up. |
+| `schedule` | `"30 3 * * *"` | Cron expression (UTC). The job also runs once at start-up, after the first discovery run. |
 | `window_days` | `7` | Whole UTC days of demod telemetry, up to the start of today, the medians cover. |
 | `min_samples` | `1440` | Fewest locked reports (about one a minute, so a day) for a usable baseline. |
 | `ber_floor` | `1e-6` | Smallest effective BER baseline. |
@@ -376,12 +376,25 @@ Events go to tropobeat's output, by default the `tropobeat-<version>` data strea
 
 | Metricset | One event per | Main fields |
 |---|---|---|
-| `cochannel` | Co-channel path, per discovery run | `tropobeat.cochannel.run_id`, `path_id` (`<lrf>:<facility id>:<rf channel>`), `rf_channel`, `lrf.{code, location, call_signs}`, `transmitter.{call_sign, facility_id, service, erp_kw, location}`, `midpoint.location`, `distance_mi`, `bearing_deg`, `path` (the path as a line) |
-| `weather` | Co-channel path (or LRF with no paths), per poll | `tropobeat.weather.path_id`, `run_id`, `lrf_code`, `rf_channel`, `transmitter_call_sign`, `forecast_time`, `path`; `lrf`/`midpoint`/`transmitter`, each with `location`, `elevation_m`, `surface` and `levels[]` (pressure, height, temperature, humidity) and a `ducting` summary; and the path's `ducting.{index, frequency_mhz, trapped}` |
-| `baseline` | Demod instance and RF channel, per baseline run | `tropobeat.baseline.run_id`, `instance.{id, host_ip, slot, input}`, `lrf.{code, location}`, `demod_side`, `rf_channel`, `card_label`, `frame_label`, `tags`, `call_signs`, `status`, `samples`, `window.{start, end, days}`, `ber.{median, effective}`, `mer.median_db` |
-| `ducting` | Unique weather location, per poll | The full analysis: refractivity at every height, every layer's gradient and class, the ducts found, the score and class, and the paths and LRFs that use the location. See [DUCTING.md](DUCTING.md#7-field-reference). |
+| `cochannel` | Co-channel path, per discovery run | `tropobeat.cochannel.lrf.location`, `transmitter.{service, erp_kw, location}`, `midpoint.location`, `distance_mi`, `bearing_deg`, `path` (the path as a line) |
+| `weather` | Co-channel path (or LRF with no paths), per poll | `tropobeat.weather.path`; `lrf`/`midpoint`/`transmitter`, each with `location`, `elevation_m`, `surface` and `levels[]` (pressure, height, temperature, humidity) and a `ducting` summary; and the path's `ducting.{index, frequency_mhz, trapped}` |
+| `baseline` | Demod instance and RF channel, per baseline run | `tropobeat.baseline.run_id`, `instance.{id, host_ip, slot, input}`, `lrf.location`, `demod_side`, `card_label`, `frame_label`, `tags`, `status`, `samples`, `window.{start, end, days}`, `ber.{median, effective}`, `mer.median_db` |
+| `ducting` | Unique weather location, per poll | The full analysis: refractivity at every height, every layer's gradient and class, the ducts found, and the score and class. See [DUCTING.md](DUCTING.md#7-field-reference). |
 
-Use the latest `run_id` for the current set of co-channel paths or baselines: each run publishes a fresh, dated set rather than updating the previous one.
+**Shared fields.** The identifying fields sit directly under `tropobeat` and are the same on every metricset, so one dashboard filter or search works across all of them. Lists are always arrays.
+
+| Field | cochannel | weather | ducting | baseline |
+|---|---|---|---|---|
+| `lrf_codes` | the path's LRF | the path's LRF (or the LRF with no paths) | every LRF using the location | the input's LRF |
+| `path_ids` (`<lrf>:<facility id>:<rf channel>`), `rf_channels`, `bands`, `transmitter_call_signs`, `transmitter_facility_ids` | the path | the path | every path using the location | the co-channel paths on the input's LRF and channel: its possible interferers |
+| `station_call_signs` | the LRF's own stations on the channel | same (paths only) | same, for every path | parsed from the input's tags |
+| `discovery_run_id` | ✓ | ✓ | ✓ | when it has paths |
+| `forecast_time` | | ✓ | ✓ | |
+| `ducting_state`, `ducting_level` (0–3) | | ✓ | ✓ | |
+
+`bands` is `low_vhf`, `high_vhf` or `uhf`. `ducting_state` is `normal`, `super_refractive`, `ducting` or `trapping` ([DUCTING.md](DUCTING.md#ducting-state)).
+
+Use the latest `discovery_run_id` for the current set of co-channel paths, and the latest `tropobeat.baseline.run_id` for the current baselines: each run publishes a fresh, dated set rather than updating the previous one. A baseline lists the co-channel paths of the latest discovery run; if that run failed at start-up, the first baselines have no path fields.
 
 **After upgrading** to a version with new fields (such as the `baseline` metricset), load the new index template and roll the data stream over, so the new fields get their proper types (for example the BER fields as `double` and `instance.host_ip` as `ip`) instead of types guessed from the first values: `./tropobeat setup --index-management -E setup.template.overwrite=true`, then `POST tropobeat-<version>/_rollover`.
 

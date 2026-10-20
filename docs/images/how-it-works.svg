@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 650" width="1050" height="650" font-family="Helvetica, Arial, sans-serif" font-size="13" role="img" aria-label="How tropobeat works: four sources feed four jobs; the jobs publish metricsets and keep ducting, baselines and live demod reports in memory for the planned correlation engine">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 650" width="1050" height="650" font-family="Helvetica, Arial, sans-serif" font-size="13" role="img" aria-label="How tropobeat works: four sources feed four jobs, with the demod pollers outside tropobeat publishing the live reports to the RabbitMQ exchange; the jobs publish metricsets and keep ducting, baselines and live demod reports in memory for the planned correlation engine">
   <title>How tropobeat works</title>
   <rect width="1050" height="650" fill="#ffffff"/>
   <defs>
@@ -42,6 +42,12 @@
     <text x="32" y="392">the same inSITE indices</text>
     <text x="32" y="512">live reports, ~1 a minute per input</text>
   </g>
+
+  <!-- Demod pollers: outside tropobeat, they publish the live reports to the exchange -->
+  <rect x="20" y="414" width="240" height="40" rx="4" fill="#ffffff" stroke="#7f8c8d" stroke-width="1.5" stroke-dasharray="1.5 3" stroke-linecap="round"/>
+  <text x="32" y="431" fill="#222" font-weight="bold">Demod pollers</text>
+  <text x="32" y="446" fill="#555" font-size="11">inSITE, outside tropobeat</text>
+  <path d="M140 454 V474" fill="none" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
 
   <!-- Jobs -->
   <g fill="#d6eaf8" stroke="#1f4e79" stroke-width="1.5">
@@ -143,5 +149,7 @@
     <text x="374" y="4">metricset in the tropobeat data stream</text>
     <rect x="620" y="-9" width="34" height="18" rx="4" fill="#fbfcfc" stroke="#7f8c8d" stroke-width="1.5" stroke-dasharray="6 4"/>
     <text x="662" y="4">planned</text>
+    <rect x="740" y="-9" width="34" height="18" rx="4" fill="#ffffff" stroke="#7f8c8d" stroke-width="1.5" stroke-dasharray="1.5 3" stroke-linecap="round"/>
+    <text x="782" y="4">outside tropobeat</text>
   </g>
 </svg>

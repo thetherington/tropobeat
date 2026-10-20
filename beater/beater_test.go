@@ -52,19 +52,30 @@ func TestCochannelEvent(t *testing.T) {
 	}
 	f := ev.Fields
 	checks := map[string]any{
-		"metricset.name":                            "cochannel",
-		"tropobeat.cochannel.run_id":                "20261013T030000Z",
-		"tropobeat.cochannel.path_id":               "TERH:1001:10",
-		"tropobeat.cochannel.rf_channel":            10,
-		"tropobeat.cochannel.lrf.code":              "TERH",
-		"tropobeat.cochannel.transmitter.call_sign": "WFAR-TV",
-		"tropobeat.cochannel.transmitter.erp_kw":    30.0,
-		"tropobeat.cochannel.distance_mi":           99.5,
-		"tropobeat.cochannel.path.type":             "LineString",
+		"metricset.name":                         "cochannel",
+		"tropobeat.discovery_run_id":             "20261013T030000Z",
+		"tropobeat.cochannel.transmitter.erp_kw": 30.0,
+		"tropobeat.cochannel.distance_mi":        99.5,
+		"tropobeat.cochannel.path.type":          "LineString",
 	}
 	for k, want := range checks {
 		if got := get(t, f, k); got != want {
 			t.Errorf("%s = %v, want %v", k, got, want)
+		}
+	}
+	checkLists(t, f, map[string]any{
+		"tropobeat.lrf_codes":                []string{"TERH"},
+		"tropobeat.path_ids":                 []string{"TERH:1001:10"},
+		"tropobeat.rf_channels":              []int{10},
+		"tropobeat.bands":                    []string{"high_vhf"},
+		"tropobeat.transmitter_call_signs":   []string{"WFAR-TV"},
+		"tropobeat.transmitter_facility_ids": []string{"1001"},
+		"tropobeat.station_call_signs":       []string{"WTHI"},
+	})
+	// Discovery has no weather, so no forecast hour or ducting state.
+	for _, k := range []string{"tropobeat.forecast_time", "tropobeat.ducting_state"} {
+		if _, err := f.GetValue(k); err == nil {
+			t.Errorf("%s set on a cochannel event", k)
 		}
 	}
 
@@ -103,15 +114,12 @@ func TestWeatherEvent(t *testing.T) {
 		t.Errorf("timestamp = %v, want fetch time %v", ev.Timestamp, fetched)
 	}
 	f := ev.Fields
-	if got := get(t, f, "tropobeat.weather.forecast_time"); got != hour {
+	if got := get(t, f, "tropobeat.forecast_time"); got != hour {
 		t.Errorf("forecast_time = %v, want forecast hour %v", got, hour)
 	}
 	for k, want := range map[string]any{
 		"metricset.name":                              "weather",
-		"tropobeat.weather.path_id":                   "TERH:1001:10",
-		"tropobeat.weather.lrf_code":                  "TERH",
-		"tropobeat.weather.rf_channel":                10,
-		"tropobeat.weather.transmitter_call_sign":     "WFAR-TV",
+		"tropobeat.discovery_run_id":                  "run1",
 		"tropobeat.weather.path.type":                 "LineString",
 		"tropobeat.weather.midpoint.elevation_m":      150.0,
 		"tropobeat.weather.lrf.surface.temperature_k": 288.15,
@@ -127,14 +135,41 @@ func TestWeatherEvent(t *testing.T) {
 	if _, ok := levels[0]["relative_humidity_pct"]; ok {
 		t.Error("nil values should be omitted")
 	}
+	checkLists(t, f, map[string]any{
+		"tropobeat.lrf_codes":              []string{"TERH"},
+		"tropobeat.path_ids":               []string{"TERH:1001:10"},
+		"tropobeat.rf_channels":            []int{10},
+		"tropobeat.transmitter_call_signs": []string{"WFAR-TV"},
+	})
 
-	// LRF-only group: no path fields.
-	lrfOnly := weatherEvent(openmeteo.GroupProfile{ID: "BOS", Points: g.Points[:1]}, nil, "BOS", "", fetched, nil)
-	if _, err := lrfOnly.Fields.GetValue("tropobeat.weather.rf_channel"); err == nil {
-		t.Error("LRF-only event should have no rf_channel")
+	// LRF-only group: only the LRF code, and no path fields. The group ID
+	// (the LRF code) is not a path ID.
+	lrfOnly := weatherEvent(openmeteo.GroupProfile{ID: "BOS", Points: g.Points[:1]}, nil, "BOS", "", fetched, nil).Fields
+	checkLists(t, lrfOnly, map[string]any{"tropobeat.lrf_codes": []string{"BOS"}})
+	for _, k := range []string{"tropobeat.path_ids", "tropobeat.rf_channels", "tropobeat.bands", "tropobeat.discovery_run_id", "tropobeat.weather.path"} {
+		if _, err := lrfOnly.GetValue(k); err == nil {
+			t.Errorf("LRF-only event should have no %s", k)
+		}
 	}
-	if _, err := lrfOnly.Fields.GetValue("tropobeat.weather.path"); err == nil {
-		t.Error("LRF-only event should have no path")
+}
+
+// checkLists compares list fields, which are published as typed slices.
+func checkLists(t *testing.T, f mapstr.M, want map[string]any) {
+	t.Helper()
+	for k, w := range want {
+		got := get(t, f, k)
+		switch w := w.(type) {
+		case []string:
+			if g, ok := got.([]string); !ok || !slices.Equal(g, w) {
+				t.Errorf("%s = %v, want %v", k, got, w)
+			}
+		case []int:
+			if g, ok := got.([]int); !ok || !slices.Equal(g, w) {
+				t.Errorf("%s = %v, want %v", k, got, w)
+			}
+		default:
+			t.Fatalf("checkLists: unsupported type %T for %s", w, k)
+		}
 	}
 }
 
@@ -202,7 +237,7 @@ func TestRegisterJobsWeatherDisabled(t *testing.T) {
 				t.Errorf("jobs = %v, want %v", names, tc.want)
 			}
 			// The first-poll trigger must be safe without a weather job.
-			bt.startWeatherOnce()
+			bt.startAfterDiscoveryOnce()
 		})
 	}
 }
@@ -285,6 +320,8 @@ func TestDuctingSummaryOnWeatherEvent(t *testing.T) {
 		"tropobeat.weather.ducting.trapped":                true,
 		"tropobeat.weather.midpoint.ducting.profile_id":    "39.93,-86.7",
 		"tropobeat.weather.transmitter.ducting.profile_id": "40.4,-86",
+		"tropobeat.ducting_state":                          "trapping",
+		"tropobeat.ducting_level":                          3,
 	} {
 		if got := get(t, f, k); got != want {
 			t.Errorf("%s = %v, want %v", k, got, want)
@@ -302,13 +339,20 @@ func TestDuctingSummaryOnWeatherEvent(t *testing.T) {
 	if got := get(t, f, "tropobeat.weather.ducting.trapped"); got != false {
 		t.Errorf("RF 2 trapped = %v, want false", got)
 	}
+	if got := get(t, f, "tropobeat.ducting_state"); got != "ducting" {
+		t.Errorf("RF 2 ducting_state = %v, want ducting", got)
+	}
 
-	// An LRF-only event gets the point summary but no path index.
+	// An LRF-only event gets the point summary and the state at the LRF, but
+	// no path index.
 	f = weatherEvent(groups[2].group, nil, "BOS", "run1", at, locs).Fields
 	if _, err := f.GetValue("tropobeat.weather.ducting"); err == nil {
 		t.Error("LRF-only event should have no path ducting index")
 	}
 	get(t, f, "tropobeat.weather.lrf.ducting.score")
+	if got := get(t, f, "tropobeat.ducting_state"); got != "normal" {
+		t.Errorf("BOS ducting_state = %v, want normal", got)
+	}
 }
 
 func TestDuctingEvents(t *testing.T) {
@@ -345,20 +389,26 @@ func TestDuctingEvents(t *testing.T) {
 		"metricset.name":                   "ducting",
 		"tropobeat.ducting.class":          "ducting",
 		"tropobeat.ducting.dropped_levels": 1,
-		"tropobeat.ducting.run_id":         "run1",
+		"tropobeat.discovery_run_id":       "run1",
+		"tropobeat.forecast_time":          time.Date(2026, 10, 14, 15, 0, 0, 0, time.UTC),
 		"tropobeat.ducting.elevation_m":    150.0,
+		// The duct traps RF 10 (one of the two paths), so the location is
+		// trapping.
+		"tropobeat.ducting_state": "trapping",
+		"tropobeat.ducting_level": 3,
 	} {
 		if got := get(t, terh, k); got != want {
 			t.Errorf("%s = %v, want %v", k, got, want)
 		}
 	}
-	paths := get(t, terh, "tropobeat.ducting.path_ids").([]string)
-	if !slices.Equal(paths, []string{"TERH:1001:10", "TERH:2002:2"}) {
-		t.Errorf("path_ids = %v", paths)
-	}
-	if codes := get(t, terh, "tropobeat.ducting.lrf_codes").([]string); !slices.Equal(codes, []string{"TERH"}) {
-		t.Errorf("lrf_codes = %v", codes)
-	}
+	checkLists(t, terh, map[string]any{
+		"tropobeat.path_ids":                 []string{"TERH:1001:10", "TERH:2002:2"},
+		"tropobeat.lrf_codes":                []string{"TERH"},
+		"tropobeat.rf_channels":              []int{2, 10},
+		"tropobeat.bands":                    []string{"high_vhf", "low_vhf"},
+		"tropobeat.transmitter_facility_ids": []string{"1001", "2002"},
+		"tropobeat.transmitter_call_signs":   []string{"WFAR-TV"},
+	})
 	if n := len(get(t, terh, "tropobeat.ducting.points").([]mapstr.M)); n != 3 {
 		t.Errorf("%d points, want 3", n)
 	}

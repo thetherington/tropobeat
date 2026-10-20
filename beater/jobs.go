@@ -59,10 +59,10 @@ func (bt *tropobeat) loadLRFs(ctx context.Context) (all, selected []lrf.LRF, err
 // the demod telemetry, discovers the co-channel paths, swaps them into
 // memory and publishes them. On error the previous snapshot is kept.
 func (bt *tropobeat) runCochannel(ctx context.Context) error {
-	// The weather job waits for the first discovery run so it has paths to
-	// poll. Kick it off when this run returns, whether or not it succeeded;
-	// startWeatherOnce only does this the first time.
-	defer bt.startWeatherOnce()
+	// The baseline and weather jobs wait for the first discovery run so they
+	// have its paths. Kick them off when this run returns, whether or not it
+	// succeeded; startAfterDiscoveryOnce only does this the first time.
+	defer bt.startAfterDiscoveryOnce()
 
 	// The run ID is the UTC start time; it tags every event from this run
 	// so co-channel and weather events can be tied back to it.
@@ -331,7 +331,7 @@ func analyseLocations(groups []fetchedGroup, cfg ducting.Config) map[string]*loc
 					coord:    pt.Profile.Requested,
 					profile:  pt.Profile,
 					analysis: ducting.Analyse(*pt.Profile, cfg),
-					pathIDs:  map[string]struct{}{},
+					paths:    map[string]*cochannel.Path{},
 					lrfCodes: map[string]struct{}{},
 				}
 				locs[id] = loc
@@ -341,7 +341,7 @@ func analyseLocations(groups []fetchedGroup, cfg ducting.Config) map[string]*loc
 			// when a path's points share a location. An LRF-only group has
 			// no path, so it adds only its LRF code.
 			if fg.path != nil {
-				loc.pathIDs[fg.group.ID] = struct{}{}
+				loc.paths[fg.group.ID] = fg.path
 			}
 			if fg.lrfCode != "" {
 				loc.lrfCodes[fg.lrfCode] = struct{}{}
