@@ -268,6 +268,8 @@ The `points`, `layers` and `ducts` lists are stored as plain objects so Kibana c
 
 ## 9. Kibana Maps setup
 
+The **Ducting Watch** dashboard ships with tropobeat and already contains a ducting map; see [DASHBOARD.md](DASHBOARD.md). This section is for building your own.
+
 **Ducting layer** (one dot per location, latest result):
 
 1. Add a **Documents** layer on the tropobeat index with geospatial field `tropobeat.ducting.location`. Filter it with `metricset.name : "ducting"`.

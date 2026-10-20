@@ -1,0 +1,14 @@
+{
+  "attributes": {
+    "fields": "[]",
+    "name": "LRF sites (tropobeat)",
+    "runtimeFieldMap": "{\"label\": {\"type\": \"keyword\", \"script\": {\"source\": \"emit(params._source.code + ' \\u00b7 ' + params._source.city + ', ' + params._source.state)\"}}}",
+    "title": "lrf-coordinates"
+  },
+  "coreMigrationVersion": "8.8.0",
+  "id": "tropobeat-lrf-coordinates",
+  "managed": false,
+  "references": [],
+  "type": "index-pattern",
+  "typeMigrationVersion": "7.11.0"
+}

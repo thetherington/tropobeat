@@ -1,0 +1,18 @@
+{
+  "attributes": {
+    "description": "",
+    "kibanaSavedObjectMeta": {
+      "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"kuery\"},\"filter\":[]}"
+    },
+    "title": "[Tropobeat] Ducting reference",
+    "uiStateJSON": "{}",
+    "version": 1,
+    "visState": "{\"title\": \"[Tropobeat] Ducting reference\", \"type\": \"markdown\", \"aggs\": [], \"params\": {\"fontSize\": 10, \"openLinksInNewTab\": false, \"markdown\": \"#### Ducting state (heat-map colour)\\n\\n| Lvl | State | Meaning |\\n|---|---|---|\\n| 0 | Normal (teal) | No point super-refractive or ducting |\\n| 1 | Super-refractive (yellow) | Bends more than normal; distant stations can come in stronger |\\n| 2 | Ducting (orange) | A ducting layer, but no duct thick enough to trap the channel |\\n| 3 | Trapping (rose) | A duct thick enough to trap the channel |\\n\\nA path takes its **strongest** point, so one point is enough to raise it.\\n\\n#### Gradient classes\\n\\nA location is classed by its steepest layer.\\n\\n| dN/dh (N/km) | Class | Score |\\n|---|---|---|\\n| above \\u221279 | Normal | 0 |\\n| \\u221279 to \\u2212157 | Super-refractive | 0 to 0.6 |\\n| \\u2212157 to \\u2212300 | Ducting | 0.6 to 1.0 |\\n| below \\u2212300 | Strong ducting | 1.0 |\\n\\nStandard atmosphere is about \\u221240 N/km.\\n\\n#### Path index\\n\\nThe mean of the LRF, midpoint and transmitter scores. **Above 0.6** means ducting at one or more points.\\n\\n#### Trapping\\n\\nA duct traps a channel only if it is thick enough:\\nf min (MHz) = 360,000 / thickness^1.5\\n\\n| Band | Thinnest duct that traps |\\n|---|---|\\n| Low VHF (RF 2\\u20136) | 262 to 342 m |\\n| High VHF (RF 7\\u201313) | 142 to 161 m |\\n| UHF (RF 14\\u201336) | 71 to 83 m |\\n\\n*Initial thresholds, not yet calibrated against real events.*\\n\"}}"
+  },
+  "coreMigrationVersion": "8.8.0",
+  "id": "tropobeat-ducting-reference",
+  "managed": false,
+  "references": [],
+  "type": "visualization",
+  "typeMigrationVersion": "8.5.0"
+}

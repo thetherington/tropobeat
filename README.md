@@ -43,7 +43,9 @@ Tropobeat's goal is to move operations from reactive troubleshooting to proactiv
 | Daily 7-day baselines (median Pre-FEC BER and MER) for every demod input, published for dashboards | ✅ |
 | Live demod reports from a RabbitMQ exchange (received and counted; not yet evaluated) | ✅ |
 | Judging live MER and Pre-FEC BER against the baselines and correlating them with ducting | 📋 planned (Phases 4b–5) |
-| Forecasting at-risk LRFs, alerting, inSITE dashboards | 📋 planned (Phases 6–7) |
+| **Ducting Watch** Kibana dashboard: headline figures, map, network and per-path heat maps, duct detail ([DASHBOARD.md](DASHBOARD.md)) | ✅ |
+| **Co-channel paths** Kibana dashboard: every co-channel path from the latest discovery run on one map, to check discovery ([DASHBOARD.md](DASHBOARD.md)) | ✅ |
+| Forecasting at-risk LRFs, alerting, the correlation dashboard | 📋 planned (Phases 6–7) |
 
 See the [rolling plan](ROLLING_PLAN.md) for detailed status, open questions and decisions.
 
@@ -140,7 +142,7 @@ Flags take precedence over environment variables. Prefer the environment variabl
 
 ### `tropobeat insert lrfcoordinates`: LRF sites
 
-Reads the LRF spreadsheet export (CSV) and loads it into the `lrf-coordinates` index, with each site's location as a `geo_point`.
+Reads the LRF spreadsheet export (CSV) and loads it into the `lrf-coordinates` index, with each site's location as a `geo_point`. The index is created in lookup mode, so dashboards can join it with ES|QL (`LOOKUP JOIN lrf-coordinates ON code`) to label LRF codes, for example `BOS · Andover, MA`; it is still searched normally. Lookup mode is only set when the index is created, so an `lrf-coordinates` made by an earlier version needs `--recreate` once (with tropobeat stopped, since it reads the index at start-up).
 
 ```bash
 # Preview: parse the file and print the sites, without connecting
@@ -228,6 +230,8 @@ ES_PASSWORD=…
 5. Start tropobeat.
 
 At start-up tropobeat checks the LRF list and stops with a clear message if the cluster is unreachable or the index is missing or empty.
+
+**Dashboards.** Load the Ducting Watch and Co-channel paths dashboards into Kibana once `setup.kibana` is set: `./tropobeat setup --dashboards -e` (from a source checkout, add `-E setup.dashboards.directory=_meta/kibana`). See [DASHBOARD.md](DASHBOARD.md).
 
 **Useful one-off overrides** (`-E` overrides any setting):
 
@@ -473,4 +477,5 @@ RABBITMQ_PASSWORD=… go run ./tools/demodreplay -declare -now -speed 10 \
 |---|---|
 | [ROLLING_PLAN.md](ROLLING_PLAN.md) | Phases and status, open questions, decisions, known issues, change log |
 | [DUCTING.md](DUCTING.md) | How the ducting calculation works, classes and scores, field reference, reading the results, Kibana Maps setup |
+| [DASHBOARD.md](DASHBOARD.md) | The Ducting Watch and Co-channel paths dashboards: installing, panels, using them, colours, changing them |
 | `tropobeat.reference.yml` | Every setting, with comments |

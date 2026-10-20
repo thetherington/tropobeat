@@ -1,0 +1,62 @@
+{
+  "attributes": {
+    "description": "Checks that co-channel discovery has run: every co-channel path, midpoint and transmitter from the latest discovery run, and every LRF, on one map. Pick an LRF to narrow it.",
+    "kibanaSavedObjectMeta": {
+      "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"kuery\"}}"
+    },
+    "optionsJSON": "{\"hidePanelTitles\":false,\"hidePanelBorders\":false,\"useMargins\":true,\"autoApplyFilters\":true,\"syncColors\":false,\"syncCursor\":true,\"syncTooltips\":false}",
+    "panelsJSON": "[{\"type\": \"map\", \"panelIndex\": \"a8e7ff18-77aa-4b8c-9307-a5a35deb0c81\", \"gridData\": {\"x\": 0, \"y\": 0, \"w\": 48, \"h\": 34, \"i\": \"a8e7ff18-77aa-4b8c-9307-a5a35deb0c81\"}, \"embeddableConfig\": {\"hiddenLayers\": [], \"isLayerTOCOpen\": true, \"openTOCDetails\": [], \"mapCenter\": {\"lon\": -94.0, \"lat\": 38.5, \"zoom\": 3.6}, \"drilldowns\": [], \"title\": \"Co-channel paths, latest discovery run (hover a path for details)\"}}]",
+    "pinned_panels": {
+      "panels": {
+        "28052c48-e537-41ba-9b0a-dec1de9fb429": {
+          "config": {
+            "dataViewRefName": "28052c48-e537-41ba-9b0a-dec1de9fb429:optionsListDataView",
+            "exclude": false,
+            "exists_selected": false,
+            "field_name": "tropobeat.lrf_codes",
+            "ignore_validations": false,
+            "run_past_timeout": false,
+            "search_technique": "wildcard",
+            "selected_options": [],
+            "single_select": true,
+            "sort": {
+              "by": "_count",
+              "direction": "desc"
+            },
+            "title": "LRF",
+            "use_global_filters": true
+          },
+          "grow": false,
+          "order": 0,
+          "type": "options_list_control",
+          "width": "medium"
+        }
+      }
+    },
+    "refreshInterval": {
+      "pause": true,
+      "value": 60000
+    },
+    "timeFrom": "now-7d",
+    "timeRestore": true,
+    "timeTo": "now",
+    "title": "[Tropobeat] Co-channel paths"
+  },
+  "coreMigrationVersion": "8.8.0",
+  "id": "tropobeat-cochannel-paths",
+  "managed": false,
+  "references": [
+    {
+      "id": "tropobeat-cochannel-paths-map",
+      "name": "a8e7ff18-77aa-4b8c-9307-a5a35deb0c81:savedObjectRef",
+      "type": "map"
+    },
+    {
+      "id": "tropobeat-*",
+      "name": "28052c48-e537-41ba-9b0a-dec1de9fb429:optionsListDataView",
+      "type": "index-pattern"
+    }
+  ],
+  "type": "dashboard",
+  "typeMigrationVersion": "10.3.0"
+}
