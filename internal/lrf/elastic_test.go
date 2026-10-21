@@ -112,3 +112,23 @@ func TestSelect(t *testing.T) {
 		t.Errorf("no valid codes: got %d selected, unknown %v", len(got), unknown)
 	}
 }
+
+func TestIndexBodyLookupMode(t *testing.T) {
+	var body struct {
+		Settings map[string]string `json:"settings"`
+		Mappings struct {
+			Properties map[string]any `json:"properties"`
+		} `json:"mappings"`
+	}
+	if err := json.Unmarshal([]byte(IndexBody), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Settings["index.mode"] != "lookup" {
+		t.Errorf("index.mode = %q, want lookup", body.Settings["index.mode"])
+	}
+	for _, f := range []string{"code", "city", "state", "location"} {
+		if _, ok := body.Mappings.Properties[f]; !ok {
+			t.Errorf("mapping missing %s", f)
+		}
+	}
+}

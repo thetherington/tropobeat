@@ -4,9 +4,9 @@
 
 | | |
 |---|---|
-| Last updated | 2026-10-14 |
-| Current phase | Phase 3 ducting calculation built; calibration against real soundings pending (Q16) |
-| Platform | Evertz Magnum Analytics (inSITE), Elasticsearch, Open-Meteo API |
+| Last updated | 2026-10-20 |
+| Current phase | Phase 4a (RF telemetry foundation) built; Phase 4b (correlation engine) next |
+| Platform | Evertz Magnum Analytics (inSITE), Elasticsearch, RabbitMQ, Open-Meteo API |
 
 This is a living document. Update it at the end of each work session: move finished items to **Done**, add new findings to **Open questions** and **Decisions**, and add a line to the **Change log**. When a phase (or a user-visible feature) is completed, also update [README.md](README.md), which describes how tropobeat currently works. Question numbers are never reused, so gaps mean a question was resolved (see **Decisions**).
 
@@ -64,13 +64,19 @@ The aim is to move operations from reactive troubleshooting to proactive, data-d
                   ▼
        ┌─────────────────────┐
        │  Hourly weather     │◄──────── batched requests ──────── Open-Meteo API
-       │  poll               │
-       └──────────┬──────────┘
-                  │  weather per path point
-                  ▼
-       ┌─────────────────────┐             ┌─────────────────────────────┐
-       │  Ducting            │             │  Demod telemetry            │
-       │  calculation        │             │  (MER, Pre-FEC BER, power)  │
+       │  poll               │                                        ┌┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┐
+       └──────────┬──────────┘                                        ┆  Demod pollers        ┆
+                  │  weather per path point                           ┆  (outside tropobeat)  ┆
+                  ▼                                                   └┄┄┄┄┄┄┄┄┄┄┄┬┄┄┄┄┄┄┄┄┄┄┄┘
+       ┌─────────────────────┐             ┌─────────────────────────────┐        ▼
+       │  Ducting            │             │  Live demod reports         │◄── RabbitMQ
+       │  calculation        │             │  (MER, Pre-FEC BER, power,  │    exchange
+       └──────────┬──────────┘             │  lock), ~1/min per input    │
+                  │                        └──────────────┬──────────────┘
+                  │                                       │
+       ┌──────────┴──────────┐             ┌──────────────┴──────────────┐
+       │  Latest ducting     │             │  7-day baselines per demod  │◄── daily, from
+       │  per path (memory)  │             │  input (memory, published)  │    demod telemetry
        └──────────┬──────────┘             └──────────────┬──────────────┘
                   │                                       │
                   └───────────────────┬───────────────────┘
@@ -90,7 +96,8 @@ The aim is to move operations from reactive troubleshooting to proactive, data-d
 - **Co-channel paths** are discovered daily by tropobeat itself and kept in memory for the weather polls. They are also published to the tropobeat index as the `cochannel` metricset, for dashboards and maps.
 - **Weather data** comes from Open-Meteo. The `internal/openmeteo` package only fetches and organises it; the ducting calculation (`internal/ducting`) interprets it.
 - **Ducting results** are published on every weather poll in two forms: a short summary on each `weather` event (a score and class per point, and a ducting index per path), and the full detail for each weather location as the `ducting` metricset. [DUCTING.md](DUCTING.md) explains the classes, the scoring and every field.
-- **Correlation** and alerting will run inside tropobeat and publish through its normal output.
+- **Live RF telemetry** arrives from a RabbitMQ exchange, about once a minute per demod input, into tropobeat's own bounded queue. Each input is judged against its own **baseline**: the 7-day median Pre-FEC BER and MER, computed daily from the demod telemetry in Elasticsearch, held in memory and published as the `baseline` metricset.
+- **Correlation** and alerting will run inside tropobeat, as the live reports arrive, and publish through its normal output.
 - **Locations** are stored as geographic points (and co-channel paths as lines), so distance queries and Kibana maps work directly.
 
 ## 3. Phases
@@ -103,7 +110,7 @@ The aim is to move operations from reactive troubleshooting to proactive, data-d
 | Data-loading commands: `tropobeat insert …` | ✅ | A command group for loading reference data, separate from the running beat. |
 | Elasticsearch connectivity | ✅ | Uses the official Elasticsearch Go client. Connection options cover hosts, username/password or API key, a custom CA certificate, and (for testing only) skipping certificate checks. |
 | LRF list loader | ✅ | Reads the LRF spreadsheet export. Copes with its quirks (Excel text encoding, ZIP codes missing leading zeros, stray spaces) and validates every coordinate. |
-| `tropobeat insert lrfcoordinates` | ✅ | Loads the 211 LRFs into the `lrf-coordinates` index with each site's location as a geographic point. Re-running updates sites rather than duplicating them. Supports a preview mode (`--dry-run`) and rebuilding the index (`--recreate`). Verified against Elasticsearch 8. |
+| `tropobeat insert lrfcoordinates` | ✅ | Loads the 211 LRFs into the `lrf-coordinates` index with each site's location as a geographic point. Re-running updates sites rather than duplicating them. Supports a preview mode (`--dry-run`) and rebuilding the index (`--recreate`). Verified against Elasticsearch 8. The index is created in lookup mode, so dashboards can join it to label LRF codes with their city and state, for example "BOS · Andover, MA". |
 | Phase 0 committed | ✅ | 2026-10-07. |
 
 ### Phase 1: Weather data & LRF received channels 🔄
@@ -158,13 +165,47 @@ Turns the weather at each path point into refractivity, layer gradients, ducts a
 | Calibration against radiosonde soundings | 📋 | Compare results from model levels with full-resolution weather-balloon soundings near LRFs on known ducting days, to measure how often coarse levels detect, weaken or miss ducts, and to set the score bands (Q16, Q17). |
 | Forecast hours | 📋 | Scoring forecast hours ahead is part of Phase 6. |
 
-### Phase 4: RF telemetry integration 📋
+### Phase 4: RF telemetry integration 🔄
+
+Brings in the live RF side: every demod input's MER, Pre-FEC BER, power and lock status, about once a minute, judged against what is normal for that input and correlated with the ducting results. Split into three parts: **4a** the foundation (live stream, baselines, ducting held in memory), **4b** the correlation engine (the detection rules), and **4c** the output (events and alerts).
+
+**Demod telemetry.** Stored in inSITE in the daily `log-metric-p-rfdemod-YYYY.MM.DD` indices, and sent live on a RabbitMQ exchange in the same form. Fields under `rfdemod.rf_demod`: `i_input_mer` (MER, whole dB), `d_pre_fec_ber` (Pre-FEC BER), `i_input_power` (input power, dBm), `s_input_status` (lock status), `i_rf_channel`, `s_input_tag`, `s_lrf_id` (LRF code), `s_demod_side` (A or B), and the card identity `s_card_label`, `s_frame_label`, `i_slot`, `i_input`; plus `host.ip`, the demod frame's address. `as_ids` (the collector's internal polling IDs) is not used.
+
+**Demod instance.** One demod input is identified by its frame's host IP, card slot and input number. LRF, side and channel are properties of the input, not its identity. Measured over 7 days of test data: 2,818 inputs on 413 frames; nearly every LRF has two frames, one per side (A and B). Identifying inputs this way keeps apart the 11 channels that are received twice on the same frame, which an LRF-side-channel key would merge.
+
+#### Phase 4a: foundation ✅
 
 | Item | Status | Notes |
 |---|---|---|
-| Demod telemetry in inSITE | 📋 | Daily indices `log-metric-p-rfdemod-YYYY.MM.DD`. Fields under `rfdemod.rf_demod`: `i_input_mer` (MER, dB), `d_pre_fec_ber` (Pre-FEC BER), `i_input_power` (input power, dBm), `s_input_status` (lock status), `i_rf_channel`, `s_input_tag`, `s_lrf_id` (LRF code), and card identity `s_card_label`, `s_frame_label`, `s_demod_side`, `i_slot`, `i_input`. `as_ids` (the collector's internal polling IDs) is not used. Each input reports about once a minute. The same data feeds the Phase 1 received-channel list. |
-| Baselines per LRF/channel | 📋 | Normal ranges by time of day and season, so drops are measured against what is normal for that site. |
-| Interference signature | 📋 | CCI typically shows MER/BER degrading while RF power holds steady or rises. A fade shows power dropping. Use this to tell interference from loss of signal. |
+| Live demod stream from RabbitMQ | ✅ | Tropobeat declares its own queue, bound to the demod exchange, so it receives a copy of every report without taking them from other consumers. By default it only checks that the exchange exists and never changes it, since the exchange belongs to inSITE. The queue is bounded: reports older than 5 minutes expire and beyond 50,000 the oldest are dropped, so a stopped tropobeat can't build up a backlog of stale reports. The broker sends at most 500 unacknowledged reports at a time, and each is acknowledged once received. Malformed or incomplete reports are rejected. TLS is supported, and the password is required, kept in the keystore and never logged. Off by default. Settings follow the routelogbeat naming. |
+| Reconnects | ✅ | One supervisor owns the connection, so any failure (a dropped connection, a closed channel, a broker restart, a deleted queue) leads to a fresh connection. The wait doubles from 1 second up to 30 seconds, with some randomness, and resets after a minute connected. The stream to the rest of tropobeat stays open throughout. Improves on the routelogbeat client, which could stay stuck when only the channel closed. Verified against a local broker by forcing each case during a replay. |
+| Ingest summary | ✅ | Every minute: reports decoded (and how many locked), demod inputs and LRFs seen, reports rejected, and reconnects. Verified with the 2026-10-13 sample replayed: 2,815 inputs at 207 LRFs; the only rejected reports were the sample's few without an LRF ID. |
+| Daily baselines | ✅ | For every demod input and RF channel, the **median Pre-FEC BER** and **median MER** of its locked reports over the last 7 whole days (up to the start of today, so the result is the same all day). Runs at start-up and daily at 03:30 UTC, after discovery. The BER median uses Elasticsearch's HDR method, which matched the exact median on every test input; the default method was more than 10% out on a third of them. The MER median is computed exactly. The full network takes about 10 to 16 seconds. |
+| BER floor | ✅ | 96% of locked reports have a BER of exactly 0, so most medians are 0. A spike is measured against an **effective BER** of at least 1e-6 (setting). |
+| Baseline status | ✅ | `ok`; `insufficient` (under a day of reports); `invalid` (a saturated median of 16.777215, as spare inputs that report "Locked" do); or `no_station` (the tag names no station). Only `ok` baselines will be used to judge live telemetry. A warning is logged if the demod data doesn't reach back over the whole window. |
+| `baseline` metricset | ✅ | One event per demod input and channel on every run: the input, LRF and its location, side, channel, card and frame, tags and call signs, status, sample count and time span, BER median and effective BER, and MER median. A published record for dashboards and evidence; tropobeat always recomputes baselines from the demod telemetry and never reads them back. Verified on the test cluster: TERH side A, RF 10: 9,884 reports, BER median 0 (effective 1e-6), MER median 33 dB. |
+| Baselines and ducting in memory | ✅ | Both are replaced as a whole on each refresh (baselines daily, ducting on every weather poll), so reads never wait and always see one complete set; a failed refresh keeps the previous set. Baselines older than 48 hours (two missed runs) and ducting older than two weather periods are treated as missing, so stale data can never confirm interference. Each co-channel path's ducting result is indexed by LRF and channel, so a demod report leads straight to "does any co-channel path on this channel have dM/dh < 0?". |
+| Replay tool for testing | ✅ | Publishes the demod sample to a RabbitMQ exchange, in time order, at real or accelerated speed, optionally moved to the current time. Lets the stream be tested without inSITE. |
+
+#### Phase 4b: correlation engine ⏳
+
+A correlation engine inside tropobeat that evaluates each demod report as it arrives. One worker owns all live state (the latest reading and the counters of every demod input), so no locking is needed; a sweep every few seconds handles inputs that go quiet.
+
+| Item | Status | Notes |
+|---|---|---|
+| BER spike and MER drop | 📋 | Per demod input, against its own baseline. **BER spike:** locked, and BER at least 10× the effective baseline, or a saturated reading. **MER drop:** locked, and MER at least 3 dB below the baseline median. Thresholds are settings. |
+| Environmentally Stressed | 📋 | A BER spike that holds for 3 consecutive 1-minute reports while the input stays locked. |
+| 3-minute hysteresis | 📋 | No state change or alert until a condition has held for 3 consecutive 1-minute cycles, and none clears until it has been clean for 3. A minute with no report counts neither way. |
+| Dual-path confirmation | 📋 | For an LRF and channel, side A and side B are both degraded (BER spike or MER drop) within the same minute **and** the latest ducting shows dM/dh < 0 on a co-channel path on that channel: confirmed environmental co-channel interference. Because A and B share one antenna feed, A+B agreement shows the degradation is in the received signal rather than one demod; the ducting is the environmental evidence. |
+| Outage exclusion | 📋 | Every expected channel at an LRF (inputs with an `ok` baseline, both sides) loses lock or collapses in power and MER, with no dM/dh < 0 on any of the LRF's co-channel paths: flagged as a local power or backhaul outage, and environmental alerts for that LRF are suppressed. |
+| Frame loss | 📋 | Every input on one frame loses lock while the other side is fine: reported as an equipment or frame fault, not environmental. |
+| Interference signature | 📋 | CCI typically shows MER and BER degrading while RF power holds steady or rises; a fade shows power dropping. Used as supporting evidence. |
+
+#### Phase 4c: output 📋
+
+| Item | Status | Notes |
+|---|---|---|
+| Events and alerts | 📋 | Scope to be decided: state-change events (start and clear of Stressed, confirmed interference, outage), periodic state snapshots, and alert integration with inSITE. |
 
 ### Phase 5: Correlation engine 📋
 
@@ -186,7 +227,11 @@ Turns the weather at each path point into refractivity, layer gradients, ducts a
 | Item | Status | Notes |
 |---|---|---|
 | Mock weather for dashboard building | ✅ | Tropobeat can run with simulated weather instead of Open-Meteo (`openmeteo.mock`), while everything else stays real. The simulated weather is built so the ducting calculation produces each state on purpose: normal, super-refractive, a thin duct that traps nothing, an elevated duct, a duct that traps UHF only, and a thick duct that traps VHF too. A mixed mode moves every site through all states on a set cycle, varying with place so different sites differ at the same time. Simulated events are tagged `mock-weather`. No Open-Meteo calls are made. |
-| Map of LRFs, transmitters and co-channel paths | 📋 | Co-channel paths drawn as lines, highlighting those with active ducting. |
+| Shared fields across all results | ✅ | Every published result (co-channel paths, weather, ducting and baselines) now carries the same identifying fields: LRF, co-channel path, RF channel, TV band (low VHF, high VHF, UHF), the co-channel transmitters (call sign and FCC facility ID), the LRF's own stations, and the discovery run. Weather and ducting results also share the forecast hour. One dashboard filter (an LRF, a channel, a band, a station) therefore works on every panel and map layer at once, and a single path ID leads from a map line to its weather, its ducting detail and the demod inputs it could interfere with. Each baseline lists the co-channel paths on its LRF and channel: the transmitters that could interfere with that input. The fields replace the per-result fields they duplicated. Verified on the test cluster. |
+| Ducting state | ✅ | A four-step summary on every weather and ducting result: normal, super-refractive, ducting (a ducting layer, but no duct thick enough to trap the channel) and trapping (a duct traps the channel), also given as a level from 0 to 3 so dashboards can show the highest level over an hour or across an LRF's paths. Unlike the path ducting index, one strong point is enough to raise it. Rules in [DUCTING.md](DUCTING.md#ducting-state); the thresholds follow the score bands and will move with their calibration (Q16, Q18). |
+| Ducting monitoring dashboard | ✅ | **Ducting Watch**, a Kibana dashboard that ships with tropobeat and loads with its standard dashboard setup (or by importing one file). LRF and band selectors and a time slider drive every panel. Headline figures: LRFs with a trapping duct, paths ducting now, the selected LRF's state, and the worst path with its state, index and distance. A map of the co-channel paths that are ducting or trapping at the latest poll, with their midpoints and transmitters (click a path to filter the dashboard to it). A table of every path at the latest poll, with its state and the score at the LRF, midpoint and transmitter colour-coded. Heat maps of the network (LRFs against time, each labelled with its site's city and state) and of each co-channel path, fixed to the last 72 hours; a click on the path heat map picks the path. For a picked path, its three scores over time and the duct detail at each point, labelled LRF, midpoint or transmitter. A reference panel recalls the states and thresholds. Built and checked on the test cluster with mock weather, and installed into a clean Kibana space both ways. See [DASHBOARD.md](DASHBOARD.md). MER and BER on the same time axis follow with Phase 4b; a forecast extension past "now" follows in Phase 6. |
+| Map of LRFs, transmitters and co-channel paths | 📋 | The Ducting Watch map draws only the co-channel paths that are ducting or trapping at the latest poll, with their midpoints and transmitters, coloured and sized by the path ducting index; every LRF is shown. Still to do: colour by ducting state with trapping paths emphasised, and LRFs coloured by their highest current state. |
+| Co-channel verification dashboard | ✅ | **Co-channel paths**, a second dashboard that ships with tropobeat, to check that discovery has run. One map of the latest discovery run, with an LRF picker: every co-channel path coloured by band, its midpoint and transmitter, and every LRF labelled with its code, city and state, as on the Ducting Watch heat map. Hovering a path shows its LRF, transmitter, facility ID, channel, band, distance, bearing, ERP, service, the LRF's own stations and the discovery run; hovering an LRF shows how many paths and channels it has. An LRF without paths stands out as a plain grey square. See [DASHBOARD.md](DASHBOARD.md). |
 | Event timeline and correlation dashboard | 📋 | Telemetry overlaid with the ducting index for each event. |
 
 ### Phase 8: Hardening & deployment 📋
@@ -214,6 +259,14 @@ Turns the weather at each path point into refractivity, layer gradients, ducts a
 | Q17 | Vertical resolution. The weather model's pressure levels are 200–1,000 m apart, while real ducts are often 20–200 m thick, so thin ducts are under-scored or missed (a thin strong duct inside a 200 m layer can read as only super-refractive). Is more weather detail near the ground (more levels or a higher-resolution model) worth the extra API usage? Links to Q10, Q15. | Phase 3 accuracy |
 | Q18 | Path ducting index method. The index is a plain mean of the three points' scores, so it ignores the channel frequency (a duct too thin for a VHF channel still raises that path's index) and where along the path the duct sits (one strong point and two normal ones score the same as three moderate ones). Should Phase 5 move to a frequency-aware or midpoint-weighted index? | Phase 5 scoring |
 | Q19 | Ducting data volume. With `ducting.publish: all`, every weather location gets a ducting event on every poll: about 62,000 documents a day on the full network at hourly polling. When should production switch to `notable` (super-refractive and ducting locations only), and what retention suits the ducting data? Links to Q15. | Phase 8 deployment |
+| Q20 | RabbitMQ demod stream: tropobeat defaults to the exchange `x.tropobeat.demod` with routing key `demod.metrics`. Will inSITE publish the demod reports there (and with which exchange type), who provides the account and password, and is TLS required? | Phase 4a in production |
+| Q21 | Do the production demod indices keep at least 7 days? The baselines need 7 whole days; tropobeat warns when the data is shorter. | Full baselines |
+| Q22 | What should happen when every channel at an LRF is lost **and** a co-channel path shows dM/dh < 0? The rules cover only the case without ducting (an outage). | Phase 4b outage rule |
+| Q23 | Should the demod side labels be cleaned up at source? Some inputs report `1 A` instead of `A` (handled), and a few report no side. | Phase 4b A/B pairing |
+| Q24 | How should LRFs that are down for long periods be shown? Six LRFs were entirely unlocked in the 2026-10-13 sample; with no locked reports they get no baseline and are ignored by the rules. | Phase 4b/4c |
+| Q25 | Should a demod input (or a whole LRF) that stops reporting altogether count as an outage? | Phase 4b |
+| Q26 | Threshold calibration and flapping channels. The test data is one real day (2026-10-13) copied across 12 days, so it shows how the rules behave on that day but can't tell a channel that is marginal every day from one that had a single bad day. On that day, without the ducting check, the BER rule would raise 1,749 three-minute episodes on 145 inputs (57 with 10 or more), and the MER rule 1,115 on 203. Real multi-day data is needed before tuning thresholds or adding special handling. Links to Q16. | Phase 4b tuning |
+| Q27 | Formal conformance with ITU-R P.453. The ducting calculation follows ITU-R P.453 for refractivity, modified refractivity and the duct condition, but works out water vapour pressure with the widely used Magnus formula rather than the recommendation's own formula (which adds a small pressure correction). The two agree to within about 1.2 N-units, too little to change any class, duct or score. Should the calculation switch to the recommendation's vapour-pressure formula (over water at all temperatures), so results can be described as following ITU-R P.453 in full? Links to Q10. | Reporting and documentation; no effect on results |
 
 ## 5. Decisions
 
@@ -258,6 +311,30 @@ Turns the weather at each path point into refractivity, layer gradients, ducts a
 | 2026-10-14 | A ducting event is published for every location by default (`ducting.publish: all`), with an option to publish only super-refractive and ducting locations | Normal-day profiles are needed as the baseline for calibration (Q16) and Phase 4; production volume is tracked in Q19. |
 | 2026-10-14 | Ducting events list the paths and LRFs that used their location | One search or map filter moves from a co-channel path to its three ducting results. |
 | 2026-10-13 | The workspace's copy of libbeat is patched to accept geographic-shape fields | libbeat's field definitions don't support the shape type needed for the co-channel path lines on Kibana maps. See Known issues. |
+| 2026-10-19 | Phase 4 is split into 4a (foundation: live stream, baselines, ducting held in memory), 4b (correlation engine) and 4c (output) | Builds and verifies the data path before the rules that depend on it. |
+| 2026-10-19 | Live demod reports come from a RabbitMQ exchange, into tropobeat's own bounded queue; by default tropobeat only checks the exchange exists | The exchange belongs to inSITE; an own queue gets a copy of every report without disturbing other consumers; the bounds stop a stopped tropobeat from building a backlog of stale reports. |
+| 2026-10-19 | The RabbitMQ client is based on routelogbeat's, reworked around one supervisor and with the same setting names | The routelogbeat client could stay stuck when only its channel closed; one supervisor makes every failure lead to a fresh connection. Shared setting names keep the two beats familiar to operators. |
+| 2026-10-19 | A demod input is identified by its frame's host IP, card slot and input number | Given by inSITE. Keeps apart inputs that an LRF-side-channel key would merge (11 channels are received twice on one frame). |
+| 2026-10-19 | Baselines are the 7-day median Pre-FEC BER and MER per demod input and channel, over whole UTC days up to the start of today, recomputed daily | A median is unaffected by short spikes; whole days give the same answer all day and never include future-dated data; the median barely moves in a day, so hourly runs would add load without benefit. |
+| 2026-10-19 | The BER median uses Elasticsearch's HDR percentiles; the MER median is computed exactly | The default method interpolates between BER's 1e-6 steps and was more than 10% out on a third of the test inputs; HDR matched the exact median on all of them at the same speed. |
+| 2026-10-19 | A spike is measured against an effective BER of at least 1e-6 | Most inputs report a BER of exactly 0, which would make any non-zero BER a "10×" spike. |
+| 2026-10-19 | MER drop = 3 dB or more below the baseline median | The pasted rules define the BER spike but not the MER drop. |
+| 2026-10-19 | Baselines are published daily as the `baseline` metricset, as a record; tropobeat always recomputes them and never reads them back | Dashboards and alerts can show the baseline a reading was judged against, without tropobeat depending on its own output index. |
+| 2026-10-19 | Baselines and ducting results are held in memory as complete sets replaced on each refresh, with no cache library | They are replaced in full daily and hourly, so per-entry expiry adds nothing; whole-set replacement gives lock-free reads and keeps the previous set when a refresh fails. Cache libraries (ttlcache, otter, ristretto, gocache) were considered and found unnecessary. |
+| 2026-10-19 | The A and B demods share one antenna feed | Given by inSITE. A+B agreement rules out a single-demod fault, but is not independent path evidence; dM/dh < 0 on a co-channel path is the environmental evidence. |
+| 2026-10-19 | dM/dh < 0 at a path point means its ducting class (a layer where modified refractivity falls with height), from the latest weather poll | The ducting calculation already classes every layer by its gradient; ducting results are hourly while telemetry is per minute, so each minute uses the latest poll. |
+| 2026-10-19 | The correlation engine evaluates reports as they arrive, in one worker that owns the live state (Phase 4b) | Correlation keeps up with the data, and a single owner needs no locking. |
+| 2026-10-20 | The identifying fields (LRF, path, channel, band, transmitters, own stations, discovery run, forecast hour) are the same on every result, always as lists, and replace the per-result fields | A dashboard filter applies to one field name, so different names per result left panels and map layers out of a filter. One set of names, and no duplicates, keeps the results small and unambiguous. |
+| 2026-10-20 | The co-channel transmitters and the LRF's own stations are kept in separate fields | One combined field would mix "this station is received here" with "this station could interfere here". |
+| 2026-10-20 | The discovery run and a baseline's own run are kept as separate fields | The two runs happen at different times; one shared name would mix them. |
+| 2026-10-20 | Tropobeat publishes a ducting state (normal, super-refractive, ducting, trapping), rather than leaving it to each dashboard to work out | The map, the heat maps and future alerts then use one rule, which changes in one place when the thresholds are calibrated. |
+| 2026-10-20 | At start-up, the first baseline run waits for the first discovery run, as the first weather poll does | Baselines then list their co-channel paths from the outset; discovery takes seconds, so the delay doesn't matter for live telemetry. |
+| 2026-10-20 | The ducting dashboard is built in Kibana, the platform inSITE dashboards run on, rather than as a separate web application | Tropobeat already publishes everything the dashboard needs, with shared filter fields, so standard Kibana panels cover the design. Nothing extra to host, secure or keep in step with tropobeat. |
+| 2026-10-20 | The dashboard's heat maps and the "where on the path" chart always show the last 72 hours, independent of the dashboard time and slider | They give the trend while the slider picks the moment for the figures, map and tables; a slider window would shrink them to a few cells. |
+| 2026-10-20 | The dashboard opens on the last 2 hours | With hourly polls, a shorter range can briefly hold no poll and leave the latest-poll panels blank. |
+| 2026-10-20 | LRF names on dashboards come from the LRF index itself, created in lookup mode and joined at query time (ES\|QL lookup join) | Kibana charts can't join two indices themselves, and ES\|QL can only join an index in lookup mode. Making the LRF index a lookup index keeps one copy of the LRF list, without a second index or a new field on every event. The cost is that the network heat map can't pick an LRF by clicking, so the LRF control is used instead. |
+| 2026-10-20 | The Ducting Watch map takes each path's latest poll first and then keeps only paths at ducting or trapping | Filtering first would keep showing a path's last ducting poll after it had returned to normal. |
+| 2026-10-20 | The co-channel verification map shows only the latest discovery run in the time range | Runs are appended daily; drawing every run would stack identical paths and hide gaps in the latest one. |
 
 ## 6. Known issues
 
@@ -274,6 +351,15 @@ Turns the weather at each path point into refractivity, layer gradients, ducts a
 - Because every detected duct spans at least one model layer (about 200 m or more), almost every duct counts as trapping VHF-high and UHF channels; only low-VHF channels (RF 2–6) are often reported as not trapped. The trapping flag will become more selective with finer vertical detail (Q17).
 - The ducting score bands are initial values that haven't been calibrated against real ducting events yet (Q16).
 - Demod telemetry facts from the 2026-10-13 sample: each input reports about once a minute, and about 21% of reports are `Not Locked` (ignored).
+- The demod field holding Pre-FEC BER is `d_pre_fec_ber` (the pasted rules call it `f_pre_fec_ber`).
+- A saturated BER reading of 16.777215 appears in the demod telemetry; it is treated as saturated, not as a value.
+- Messages published before tropobeat's queue exists (first start-up) are not received; this is expected with an own queue.
+- After upgrading to a version with new fields (such as the `baseline` metricset), load the new index template and roll the tropobeat data stream over, or the new fields get types guessed from their first values (for example a BER median of 0 mapped as a whole number). Seen on the test cluster.
+- If tropobeat's queue settings are changed after it was created, the broker refuses the new declaration; delete the queue so it can be recreated.
+- Picking a path on the dashboard map takes two clicks (the path, then the filter button in its tooltip). Filtering on a single click needs a paid Elastic licence.
+- Some dashboard panels query the tropobeat indices by name. If tropobeat's index name changes, those panels need the same change.
+- Kibana keeps unsaved dashboard edits in the browser. After the dashboard is reloaded from tropobeat, use Reset if Kibana reports unsaved changes.
+- The Ducting Watch network heat map needs the LRF index in lookup mode. An LRF index created by an earlier version must be recreated once with the LRF load command's rebuild option, with tropobeat stopped.
 
 ## 7. Change log
 
@@ -295,3 +381,7 @@ Turns the weather at each path point into refractivity, layer gradients, ducts a
 | 2026-10-14 | Weather events now carry the path line and are timestamped at fetch time, with the forecast hour kept separately. Code comments added to the discovery and scheduling code. |
 | 2026-10-14 | Phase 3 built: the ducting calculation (above-ground profile, refractivity, layer classes, duct types and strength, likelihood score, duct trapping per channel, path ducting index), run on every weather poll. Results published as a summary on `weather` events and in full as the new `ducting` metricset, with `ducting.publish` to choose all or notable locations. Added [DUCTING.md](DUCTING.md), the technical reference for scoring, classes and fields. Q16–Q19 added; Q10 extended. Calibration against real soundings is next. |
 | 2026-10-15 | Added mock weather (`openmeteo.mock`) for building dashboards: simulated weather that produces every ducting state, including trapping, with a mixed mode that cycles each site through all states. Simulated events are tagged `mock-weather`. README updated. |
+| 2026-10-19 | Phase 4 planned and split into 4a, 4b and 4c, using the supplied RF telemetry rules (baseline, dual-path confirmation, 3-minute hysteresis, outage exclusion). A week of test demod data (one real day copied) reviewed. Phase 4a built: the live demod stream from RabbitMQ with reconnects, daily 7-day baselines per demod input published as the new `baseline` metricset, baselines and ducting held in memory, and a replay tool. Verified against a local broker and the test cluster. Q20–Q26 added. |
+| 2026-10-20 | Shared identifying fields on every result (LRF, path, channel, band, transmitters, own stations, discovery run, forecast hour), replacing the per-result ones, and a published four-step ducting state. Baselines now list the co-channel paths that could interfere with them, and the first baseline run waits for discovery. Dashboard design (LRF-focused heat maps and map) added to Phase 7. Test cluster's tropobeat data and index template rebuilt and verified. README and DUCTING.md updated. |
+| 2026-10-20 | Ducting Watch dashboard built in Kibana from the dashboard design and shipped with tropobeat, with its own guide (DASHBOARD.md). The standard dashboard setup command now loads it; it had been switched off. Phase 7's dashboard item complete; the map item narrowed to what remains. |
+| 2026-10-20 | Second dashboard, **Co-channel paths**, to check co-channel discovery. Ducting Watch map shows only paths that are ducting or trapping now; its network heat map labels each LRF with its site's city and state. The LRF index is now created in lookup mode so dashboards can join it for these labels. Both dashboards installed into a clean Kibana space with tropobeat's dashboard setup. |

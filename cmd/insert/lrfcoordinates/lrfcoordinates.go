@@ -29,7 +29,9 @@ func NewCmd() *cobra.Command {
 		Short: "Insert LRF Coordinates from CSV file",
 		Long: "Reads LRF sites from a CSV file and indexes them into Elasticsearch.\n" +
 			"The index is created with a geo_point mapping if it does not exist.\n" +
-			"Documents are keyed by LRF code, so re-running updates existing sites.",
+			"Documents are keyed by LRF code, so re-running updates existing sites.\n" +
+			"The index is in lookup mode, so dashboards can join it with ES|QL\n" +
+			"(LOOKUP JOIN ... ON code) to label LRF codes.",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -154,8 +154,43 @@ At TERH a cool, humid surface (11 °C, 96 %) sits under warm, dry air at 975 hPa
 - One `surface` duct, 2 m to 230 m: thickness 228 m, `delta_m` 1.6. It traps frequencies above 105 MHz.
 - With a midpoint score of 0.26 (super-refractive, −112.4 N/km) and a transmitter score of 0 (normal): **index = (0.62 + 0.26 + 0) / 3 = 0.29**.
 - RF 10 is 195 MHz, above 105 MHz, so **`trapped: true`**. On RF 2 (57 MHz) the same duct would give `trapped: false`.
+- Ducting state: **`trapping`** on RF 10, `ducting` on RF 2.
+
+### Ducting state
+
+A four-step summary for dashboards, maps and alerts, published as `tropobeat.ducting_state` with `tropobeat.ducting_level` (0–3), so a panel can take the highest level over an hour or across an LRF's paths. Unlike the index, one strong point is enough to raise it.
+
+| Level | State | Rule |
+|---|---|---|
+| 0 | `normal` | No point is super-refractive or ducting (`sub_refractive` counts as normal). |
+| 1 | `super_refractive` | The strongest point is super-refractive. |
+| 2 | `ducting` | A point has a ducting layer, but no duct is thick enough to trap the channel. |
+| 3 | `trapping` | A duct is thick enough to trap the channel (see [Trapped](#trapped)). |
+
+- **Weather event (a path):** taken over the path's three points and its channel. `trapping` is the same as `trapped: true`.
+- **Weather event (an LRF with no paths):** the LRF point's class. There is no channel, so never `trapping`.
+- **Ducting event (a location):** that location's class. `trapping` if a duct there traps the channel of any path using the location.
+- Points with `insufficient_data` are left out. If none is usable, the state is not set.
 
 ## 7. Field reference
+
+### Shared fields: on every metricset
+
+These sit directly under `tropobeat` on `cochannel`, `weather`, `ducting` and `baseline` events, so one dashboard filter (an LRF, a channel, a band, a station) works across all of them. Lists are always arrays, sorted and without duplicates; empty ones are left out.
+
+| Field | Unit | Meaning | How to read it |
+|---|---|---|---|
+| `tropobeat.lrf_codes` | list | LRFs the event is about | A path's LRF; every LRF that used a ducting location; a baseline's LRF. |
+| `tropobeat.path_ids` | list | Co-channel paths, `<lrf>:<facility id>:<rf channel>` | Filter on one path ID to get the path, its weather and its three ducting events. On a baseline: the paths that could interfere with that input. Not set for an LRF with no paths. |
+| `tropobeat.rf_channels` | list | RF channels | On a ducting event, the channels of every path using the location. |
+| `tropobeat.bands` | list | `low_vhf` (2–6), `high_vhf` (7–13), `uhf` (14–69) | Whether a duct traps a channel depends on the band. |
+| `tropobeat.transmitter_call_signs` | list | Co-channel transmitters: the possible interferers | Not the LRF's own stations. |
+| `tropobeat.transmitter_facility_ids` | list | FCC facility IDs of those transmitters | Stays the same when a call sign changes. |
+| `tropobeat.station_call_signs` | list | The LRF's own stations on the channel(s) | From the demod input tags. |
+| `tropobeat.discovery_run_id` | text | Discovery run the paths came from | Filter on the latest to see the current paths. A baseline's own run is `tropobeat.baseline.run_id`. |
+| `tropobeat.forecast_time` | time | The hour the weather applies to | Weather and ducting events. Use for "what was the atmosphere doing at 03:00". `@timestamp` is when it was fetched. |
+| `tropobeat.ducting_state` | text | `normal`, `super_refractive`, `ducting` or `trapping` | See [Ducting state](#ducting-state). Weather and ducting events. |
+| `tropobeat.ducting_level` | 0–3 | `ducting_state` as a number | Take the maximum for heat maps and map colours. |
 
 ### Summary on `weather` events
 
@@ -176,17 +211,15 @@ At TERH a cool, humid surface (11 °C, 96 %) sits under warm, dry air at 975 hPa
 | Field | Unit | Meaning | How to read it |
 |---|---|---|---|
 | `@timestamp` | time | When the weather was fetched | Same as the poll's `weather` events. |
-| `tropobeat.ducting.forecast_time` | time | The hour the weather applies to | Use for "what was the atmosphere doing at 03:00". |
-| `tropobeat.ducting.run_id` | text | Discovery run the paths came from | |
 | `tropobeat.ducting.profile_id` | text | The location, as "lat,lon" | Matches `profile_id` on weather points. |
 | `tropobeat.ducting.location` | geo point | Where the weather applies | Use for map layers. |
 | `tropobeat.ducting.elevation_m` | m | Terrain height | High sites drop more levels. |
-| `tropobeat.ducting.path_ids` | list | Paths that use this location | Filter on one path ID to get that path's three ducting events. |
-| `tropobeat.ducting.lrf_codes` | list | LRFs that use this location | |
 | `tropobeat.ducting.class` | text | Class of the steepest layer | See [Classes](#4-classes). |
 | `tropobeat.ducting.score` | 0–1 | Ducting likelihood | Not set for `insufficient_data`. |
 | `tropobeat.ducting.min_dndh_n_per_km` | N/km | Steepest gradient | Below −157 is ducting; below −300 is strong. |
 | `tropobeat.ducting.dropped_levels` | count | Levels left out | Usually 0–1 at low sites; 6 at Denver. A high count leaves few layers to judge from. |
+
+The paths, LRFs, channels and stations that used the location, its forecast hour and its ducting state are in the [shared fields](#shared-fields-on-every-metricset).
 
 ### `points[]`: one per usable height, lowest first
 
@@ -225,7 +258,7 @@ The `points`, `layers` and `ducts` lists are stored as plain objects so Kibana c
 
 | You see | It means |
 |---|---|
-| High `index` and `trapped: true` | Ducting along the path, thick enough for this channel. Co-channel interference is likely. |
+| `ducting_state: trapping` | A duct on the path traps this channel. With a high `index`, ducting along the path is thick enough for this channel and co-channel interference is likely. |
 | `class: ducting` but `trapped: false` | A duct, but too thin for this channel. Common on low-VHF channels (RF 2–6). |
 | `super_refractive`, score 0.3–0.6 | Stronger bending than normal. Can bring a distant station up without full ducting, and may hide a thin duct (see [Limitations](#10-limitations)). |
 | High score at the LRF only | Local conditions at the receive site; the path may not be ducting end to end. |
@@ -235,16 +268,20 @@ The `points`, `layers` and `ducts` lists are stored as plain objects so Kibana c
 
 ## 9. Kibana Maps setup
 
+The **Ducting Watch** dashboard ships with tropobeat and already contains a ducting map; see [DASHBOARD.md](DASHBOARD.md). This section is for building your own.
+
 **Ducting layer** (one dot per location, latest result):
 
 1. Add a **Documents** layer on the tropobeat index with geospatial field `tropobeat.ducting.location`. Filter it with `metricset.name : "ducting"`.
 2. Under **Scaling**, choose **Show top hits per entity**: entity `tropobeat.ducting.profile_id`, sorted by `@timestamp` descending, 1 hit. Each location then shows only its latest result, not one dot per hour.
-3. Colour the dots by `tropobeat.ducting.score` (or by `tropobeat.ducting.class`).
-4. Set the **tooltip** to the summary fields: `class`, `score`, `min_dndh_n_per_km`, `ducts.thickness_m`, `ducts.delta_m`, `path_ids`. Leave out `points` and `layers`; their lists don't read well in a tooltip.
+3. Colour the dots by `tropobeat.ducting_level` (or by `tropobeat.ducting.score`).
+4. Set the **tooltip** to the summary fields: `ducting_state`, `class`, `score`, `min_dndh_n_per_km`, `ducts.thickness_m`, `ducts.delta_m`, `path_ids`. Leave out `points` and `layers`; their lists don't read well in a tooltip.
 
-**Path layer:** add a Documents layer on `tropobeat.weather.path` (filter `metricset.name : "weather"`) and colour the lines by `tropobeat.weather.ducting.index`.
+**Path layer:** add a Documents layer on `tropobeat.weather.path` (filter `metricset.name : "weather"`), with top hits per entity `tropobeat.path_ids`. Colour the lines by `tropobeat.ducting_level`, or by `tropobeat.weather.ducting.index`.
 
-**From a path to its ducting detail:** take the `path_id` from a path's tooltip and filter with `tropobeat.ducting.path_ids : "TERH:1001:10"`. The ducting layer then shows that path's three points (two if `coordinate_precision` merged the midpoint with an end point), and Discover lists their full results.
+**One LRF everywhere:** a dashboard control on `tropobeat.lrf_codes` (or `rf_channels`, `bands`, `transmitter_call_signs`) filters every layer and panel at once, because every metricset has the same field.
+
+**From a path to its ducting detail:** take the path ID from a path's tooltip and filter with `tropobeat.path_ids : "TERH:1001:10"`. The ducting layer then shows that path's three points (two if `coordinate_precision` merged the midpoint with an end point), and Discover lists their full results.
 
 **One-click navigation:** on a dashboard, a map panel can have a drilldown that opens Discover filtered on the clicked path. Check this on your Kibana version before relying on it.
 

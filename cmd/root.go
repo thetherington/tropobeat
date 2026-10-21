@@ -12,7 +12,7 @@ import (
 var Name = "tropobeat"
 
 // RootCmd to handle beats cli
-var RootCmd = cmd.GenRootCmdWithSettings(beater.New, instance.Settings{Name: Name})
+var RootCmd = cmd.GenRootCmdWithSettings(beater.New, instance.Settings{Name: Name, HasDashboards: true})
 
 func init() {
 	RootCmd.AddCommand(insert.NewCmd())

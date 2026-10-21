@@ -6,13 +6,14 @@ package config
 import (
 	"time"
 
-	"github.com/thetherington/tropobeat/internal/cochannel"
+	"github.com/thetherington/tropobeat/internal/demod"
 	"github.com/thetherington/tropobeat/internal/ducting"
 	"github.com/thetherington/tropobeat/internal/elastic"
 	"github.com/thetherington/tropobeat/internal/fcc"
 	"github.com/thetherington/tropobeat/internal/lrf"
 	"github.com/thetherington/tropobeat/internal/openmeteo"
 	"github.com/thetherington/tropobeat/internal/openmeteo/mock"
+	"github.com/thetherington/tropobeat/internal/rabbitmqclient"
 )
 
 type Config struct {
@@ -33,6 +34,31 @@ type Config struct {
 	OpenMeteo OpenMeteoConfig `config:"openmeteo"`
 	// Ducting configures the ducting calculation run on each weather poll.
 	Ducting ducting.Config `config:"ducting"`
+	// RabbitMQ is the live demod report stream.
+	RabbitMQ rabbitmqclient.Config `config:"rabbitmq"`
+	// Baseline configures the daily 7-day demod baselines.
+	Baseline BaselineConfig `config:"baseline"`
+}
+
+// BaselineConfig configures the daily baseline job: the median Pre-FEC BER
+// and MER of every demod instance and channel over the last WindowDays.
+type BaselineConfig struct {
+	// Schedule is a cron expression (UTC) for the baseline run. The job also
+	// runs once at start-up.
+	Schedule string `config:"schedule" validate:"required"`
+	// WindowDays is how many whole UTC days of demod telemetry, up to the
+	// start of today, the medians cover.
+	WindowDays int `config:"window_days" validate:"positive,nonzero"`
+	// MinSamples is the fewest locked reports a baseline needs to be usable.
+	MinSamples int `config:"min_samples" validate:"positive,nonzero"`
+	// BERFloor is the smallest effective BER baseline. Most medians are 0,
+	// and a spike is measured against max(median, BERFloor).
+	BERFloor float64 `config:"ber_floor" validate:"positive,nonzero"`
+	// MaxAge is how old the baselines can get (after failed runs) before
+	// they are treated as missing.
+	MaxAge time.Duration `config:"max_age" validate:"positive,nonzero"`
+	// Publish publishes each run's baselines as the baseline metricset.
+	Publish bool `config:"publish"`
 }
 
 // OpenMeteoConfig is the weather client configuration plus a switch for the
@@ -64,7 +90,7 @@ var DefaultConfig = Config{
 	Period:        1 * time.Hour,
 	Elasticsearch: elastic.Config{Hosts: elastic.DefaultHosts},
 	LRFIndex:      lrf.DefaultIndex,
-	DemodIndex:    cochannel.DefaultDemodIndex,
+	DemodIndex:    demod.DefaultIndex,
 	FCCIndex:      fcc.DefaultIndex,
 	Cochannel: CochannelConfig{
 		Schedule:    "0 3 * * *",
@@ -73,4 +99,13 @@ var DefaultConfig = Config{
 	},
 	OpenMeteo: OpenMeteoConfig{Enabled: true, Config: openmeteo.DefaultConfig, Mock: mock.DefaultConfig},
 	Ducting:   ducting.DefaultConfig,
+	RabbitMQ:  rabbitmqclient.DefaultConfig,
+	Baseline: BaselineConfig{
+		Schedule:   "30 3 * * *",
+		WindowDays: 7,
+		MinSamples: 1440,
+		BERFloor:   1e-6,
+		MaxAge:     48 * time.Hour,
+		Publish:    true,
+	},
 }

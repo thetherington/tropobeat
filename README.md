@@ -40,36 +40,18 @@ Tropobeat's goal is to move operations from reactive troubleshooting to proactiv
 | Hourly weather for every path point from the Open-Meteo API | ✅ |
 | Ducting calculation on every weather poll: refractivity, layer classes, ducts, a ducting score per point and a ducting index per path | ✅ (calibration pending) |
 | Mock weather that simulates every ducting state, for building dashboards | ✅ |
-| Correlating ducting with MER, Pre-FEC BER and RF power drops | 📋 planned (Phases 4–5) |
-| Forecasting at-risk LRFs, alerting, inSITE dashboards | 📋 planned (Phases 6–7) |
+| Daily 7-day baselines (median Pre-FEC BER and MER) for every demod input, published for dashboards | ✅ |
+| Live demod reports from a RabbitMQ exchange (received and counted; not yet evaluated) | ✅ |
+| Judging live MER and Pre-FEC BER against the baselines and correlating them with ducting | 📋 planned (Phases 4b–5) |
+| **Ducting Watch** Kibana dashboard: headline figures, map, network and per-path heat maps, duct detail ([DASHBOARD.md](DASHBOARD.md)) | ✅ |
+| **Co-channel paths** Kibana dashboard: every co-channel path from the latest discovery run on one map, to check discovery ([DASHBOARD.md](DASHBOARD.md)) | ✅ |
+| Forecasting at-risk LRFs, alerting, the correlation dashboard | 📋 planned (Phases 6–7) |
 
 See the [rolling plan](ROLLING_PLAN.md) for detailed status, open questions and decisions.
 
 ## 3. How it works
 
-```
- REFERENCE DATA (loaded with `tropobeat insert`, e.g. from cron)
- ┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐
- │      LRF list       │   │  FCC transmitters   │   │   Demod telemetry   │
- │  (lrf-coordinates)  │   │ (fcc-transmitters)  │   │  (already in inSITE)│
- └──────────┬──────────┘   └──────────┬──────────┘   └──────────┬──────────┘
-            └─────────────────────────┼─────────────────────────┘
-                                      ▼
-                    ┌───────────────────────────────────┐
-                    │  cochannel job                    │
-                    │  daily at 03:00 UTC + at start-up │
-                    └─────────────────┬─────────────────┘
-                                      ▼
-                    ┌───────────────────────────────────┐
-                    │  Co-channel paths                 │──► `cochannel` events
-                    │  LRF · midpoint · transmitter     │
-                    └─────────────────┬─────────────────┘
-                                      ▼
-                    ┌───────────────────────────────────┐
-     Open-Meteo ───►│  weather job, hourly              │──► `weather` events
-                    │  + ducting calculation            │──► `ducting` events
-                    └───────────────────────────────────┘
-```
+![How tropobeat works: the LRF list, FCC transmitters, demod telemetry, Open-Meteo and the RabbitMQ demod exchange (fed by the demod pollers, outside tropobeat) feed the cochannel, weather, baseline and demod stream jobs, which publish the cochannel, weather, ducting and baseline metricsets and keep ducting, baselines and live reports in memory for the planned correlation engine](docs/images/how-it-works.svg)
 
 **Reference data.** Two `insert` commands load the reference data tropobeat works from: the LRF sites and the FCC transmitters. They run outside the beat (by hand or from cron) and can run while tropobeat is running. The demod telemetry is already collected by inSITE; tropobeat only reads it.
 
@@ -89,7 +71,19 @@ See the [rolling plan](ROLLING_PLAN.md) for detailed status, open questions and 
 3. Runs the **ducting calculation** on each location: refractivity, layer gradients and classes, ducts, and a 0–1 ducting score. Each path gets a ducting index and a flag for whether a duct is thick enough to trap its channel. See [DUCTING.md](DUCTING.md).
 4. Publishes one `weather` event per path (or LRF) and `ducting` events with the full analysis.
 
-Neither job ever overlaps itself: a run that is due while the previous one is still going is skipped. Stopping tropobeat waits for running work to finish.
+**The `baseline` job** runs once at start-up, as soon as the first discovery run finishes, and then daily (`baseline.schedule`, default 03:30 UTC, after discovery). It works out what is normal for every demod input: one baseline per **demod instance** (the demod frame's host IP, the card slot and the input) and RF channel, from the locked reports of the last 7 whole days (`baseline.window_days`, up to the start of today):
+
+- the **median Pre-FEC BER**, and an **effective BER** of at least `baseline.ber_floor` (1e-6), because most inputs report a BER of exactly 0 and a spike needs something to be measured against;
+- the **median MER** in dB;
+- a **status**: `ok`, `insufficient` (fewer than `baseline.min_samples` reports, about a day), `invalid` (a saturated BER median of 16.777215, as spare inputs that report "Locked" do) or `no_station` (the input's tag names no station, e.g. `Spare`).
+
+The baselines are kept in memory, replaced as a whole on each run (a failed run keeps the previous ones), and published as `baseline` events. They are always recomputed from the demod telemetry (the full network takes about 10 seconds), never read back from the published events.
+
+**The demod stream.** With `rabbitmq.enabled`, tropobeat receives the live demod reports (the same JSON as the demod telemetry documents) from a RabbitMQ exchange. It declares its own queue, bound to the exchange, so it gets a copy of every report without taking them from other consumers. The queue is bounded (reports older than 5 minutes expire, and beyond 50,000 the oldest are dropped), so a stopped tropobeat can't build up a backlog of stale reports. Tropobeat reconnects by itself after a broker restart, a dropped connection or a deleted queue, waiting longer after each failure (1 s, doubling up to 30 s). In this phase the reports are decoded and counted; judging them against the baselines and the ducting results comes in Phase 4b.
+
+The weather job also keeps the latest ducting result of every co-channel path in memory, for the same live checks.
+
+No job ever overlaps itself: a run that is due while the previous one is still going is skipped. Stopping tropobeat waits for running work to finish.
 
 ## 4. Requirements
 
@@ -97,6 +91,8 @@ Neither job ever overlaps itself: a run that is due while the previous one is st
 |---|---|
 | Elasticsearch 8.x | Holds the reference data and receives tropobeat's events. Tested with 8.17. |
 | inSITE demod telemetry | The daily `log-metric-p-rfdemod-YYYY.MM.DD` indices, readable from the cluster set in `tropobeat.elasticsearch`. |
+| Demod telemetry retention | At least 7 days of `log-metric-p-rfdemod-*` indices for full baselines. Tropobeat warns when the data doesn't reach back over the whole window. |
+| RabbitMQ (optional) | An exchange carrying the live demod reports, and an account that can declare and consume a queue. Needed only with `rabbitmq.enabled`. |
 | Open-Meteo API | The free API is for non-commercial use only and limited to 10,000 calls a day. Production use needs a commercial API key; see the rolling plan (Q8, Q15) for expected usage. Weather polling can be turned off (`openmeteo.enabled: false`). |
 | Outbound HTTPS | To `transition.fcc.gov` (FCC import) and `api.open-meteo.com` or `customer-api.open-meteo.com`. |
 | To build: Go 1.23 and the Beats workspace | See [Building](#5-building). |
@@ -146,7 +142,7 @@ Flags take precedence over environment variables. Prefer the environment variabl
 
 ### `tropobeat insert lrfcoordinates`: LRF sites
 
-Reads the LRF spreadsheet export (CSV) and loads it into the `lrf-coordinates` index, with each site's location as a `geo_point`.
+Reads the LRF spreadsheet export (CSV) and loads it into the `lrf-coordinates` index, with each site's location as a `geo_point`. The index is created in lookup mode, so dashboards can join it with ES|QL (`LOOKUP JOIN lrf-coordinates ON code`) to label LRF codes, for example `BOS · Andover, MA`; it is still searched normally. Lookup mode is only set when the index is created, so an `lrf-coordinates` made by an earlier version needs `--recreate` once (with tropobeat stopped, since it reads the index at start-up).
 
 ```bash
 # Preview: parse the file and print the sites, without connecting
@@ -235,6 +231,8 @@ ES_PASSWORD=…
 
 At start-up tropobeat checks the LRF list and stops with a clear message if the cluster is unreachable or the index is missing or empty.
 
+**Dashboards.** Load the Ducting Watch and Co-channel paths dashboards into Kibana once `setup.kibana` is set: `./tropobeat setup --dashboards -e` (from a source checkout, add `-E setup.dashboards.directory=_meta/kibana`). See [DASHBOARD.md](DASHBOARD.md).
+
 **Useful one-off overrides** (`-E` overrides any setting):
 
 ```bash
@@ -243,6 +241,10 @@ At start-up tropobeat checks the LRF list and stops with a clear message if the 
 
 # Trial on three LRFs
 ./tropobeat -e -E 'tropobeat.lrf_sites=["TERH","PROV","BOS"]'
+
+# Receive the live demod stream from x.tropobeat.demod (password from the
+# keystore: RABBITMQ_PASSWORD)
+./tropobeat -e -E tropobeat.rabbitmq.enabled=true
 ```
 
 ### Mock weather for dashboard building
@@ -338,17 +340,67 @@ See [DUCTING.md](DUCTING.md) for what these mean.
 
 The score bands are initial values, to be calibrated against weather-balloon soundings (rolling plan, Q16).
 
+### `baseline`: daily demod baselines
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `schedule` | `"30 3 * * *"` | Cron expression (UTC). The job also runs once at start-up, after the first discovery run. |
+| `window_days` | `7` | Whole UTC days of demod telemetry, up to the start of today, the medians cover. |
+| `min_samples` | `1440` | Fewest locked reports (about one a minute, so a day) for a usable baseline. |
+| `ber_floor` | `1e-6` | Smallest effective BER baseline. |
+| `max_age` | `48h` | After this long without a successful run, the baselines are treated as missing. |
+| `publish` | `true` | Publish each run's baselines as `baseline` events. |
+
+### `rabbitmq`: live demod stream
+
+The key names match routelogbeat's `rabbitmq_client` section.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | Receive the live demod reports. |
+| `host`, `port`, `vhost` | `localhost`, `8910`, `/` | Broker address. |
+| `username`, `password` | `insite`, (none) | The password is required when enabled. Keep it in the keystore: `tropobeat keystore add RABBITMQ_PASSWORD`, then `password: "${RABBITMQ_PASSWORD}"`. It is never written to logs. |
+| `ssl.enabled`, `ssl.ca_cert`, `ssl.insecure` | `false` | Connect with TLS (amqps), optionally trusting a CA certificate. `insecure` skips verification (testing only). |
+| `exchange` | `x.tropobeat.demod` | The exchange the demod reports are published to. |
+| `exchange_type` | `direct` | The exchange's type. |
+| `exchange_declare` | `passive` | `passive` only checks that the exchange exists (with this type and durability) and never changes it; `active` creates it, for development and replay setups. |
+| `durable` | `true` | Durability of the exchange and of tropobeat's queue. |
+| `queue` | `q.tropobeat.demod` | Tropobeat's own queue. |
+| `routing_key` | `demod.metrics` | Binding key between the exchange and the queue. |
+| `prefetch` | `500` | Unacknowledged reports the broker sends ahead. |
+| `message_ttl` | `5m` | Reports older than this expire from the queue. |
+| `max_length` | `50000` | Beyond this many queued reports, the oldest are dropped. |
+| `reconnect_interval`, `reconnect_max` | `1s`, `30s` | Reconnect delay: starts at the interval, doubles on each failure up to the maximum, and resets after a minute connected. |
+
+If the queue's settings (`durable`, `message_ttl`, `max_length`) are changed after it was created, the broker refuses the new declaration; delete the queue so tropobeat can recreate it.
+
 ## 9. What tropobeat publishes
 
 Events go to tropobeat's output, by default the `tropobeat-<version>` data stream (for example `tropobeat-8.18.0`). Each event has `metricset.name` set to one of:
 
 | Metricset | One event per | Main fields |
 |---|---|---|
-| `cochannel` | Co-channel path, per discovery run | `tropobeat.cochannel.run_id`, `path_id` (`<lrf>:<facility id>:<rf channel>`), `rf_channel`, `lrf.{code, location, call_signs}`, `transmitter.{call_sign, facility_id, service, erp_kw, location}`, `midpoint.location`, `distance_mi`, `bearing_deg`, `path` (the path as a line) |
-| `weather` | Co-channel path (or LRF with no paths), per poll | `tropobeat.weather.path_id`, `run_id`, `lrf_code`, `rf_channel`, `transmitter_call_sign`, `forecast_time`, `path`; `lrf`/`midpoint`/`transmitter`, each with `location`, `elevation_m`, `surface` and `levels[]` (pressure, height, temperature, humidity) and a `ducting` summary; and the path's `ducting.{index, frequency_mhz, trapped}` |
-| `ducting` | Unique weather location, per poll | The full analysis: refractivity at every height, every layer's gradient and class, the ducts found, the score and class, and the paths and LRFs that use the location. See [DUCTING.md](DUCTING.md#7-field-reference). |
+| `cochannel` | Co-channel path, per discovery run | `tropobeat.cochannel.lrf.location`, `transmitter.{service, erp_kw, location}`, `midpoint.location`, `distance_mi`, `bearing_deg`, `path` (the path as a line) |
+| `weather` | Co-channel path (or LRF with no paths), per poll | `tropobeat.weather.path`; `lrf`/`midpoint`/`transmitter`, each with `location`, `elevation_m`, `surface` and `levels[]` (pressure, height, temperature, humidity) and a `ducting` summary; and the path's `ducting.{index, frequency_mhz, trapped}` |
+| `baseline` | Demod instance and RF channel, per baseline run | `tropobeat.baseline.run_id`, `instance.{id, host_ip, slot, input}`, `lrf.location`, `demod_side`, `card_label`, `frame_label`, `tags`, `status`, `samples`, `window.{start, end, days}`, `ber.{median, effective}`, `mer.median_db` |
+| `ducting` | Unique weather location, per poll | The full analysis: refractivity at every height, every layer's gradient and class, the ducts found, and the score and class. See [DUCTING.md](DUCTING.md#7-field-reference). |
 
-Use the latest `run_id` for the current set of co-channel paths: each discovery run publishes a fresh, dated set rather than updating the previous one.
+**Shared fields.** The identifying fields sit directly under `tropobeat` and are the same on every metricset, so one dashboard filter or search works across all of them. Lists are always arrays.
+
+| Field | cochannel | weather | ducting | baseline |
+|---|---|---|---|---|
+| `lrf_codes` | the path's LRF | the path's LRF (or the LRF with no paths) | every LRF using the location | the input's LRF |
+| `path_ids` (`<lrf>:<facility id>:<rf channel>`), `rf_channels`, `bands`, `transmitter_call_signs`, `transmitter_facility_ids` | the path | the path | every path using the location | the co-channel paths on the input's LRF and channel: its possible interferers |
+| `station_call_signs` | the LRF's own stations on the channel | same (paths only) | same, for every path | parsed from the input's tags |
+| `discovery_run_id` | ✓ | ✓ | ✓ | when it has paths |
+| `forecast_time` | | ✓ | ✓ | |
+| `ducting_state`, `ducting_level` (0–3) | | ✓ | ✓ | |
+
+`bands` is `low_vhf`, `high_vhf` or `uhf`. `ducting_state` is `normal`, `super_refractive`, `ducting` or `trapping` ([DUCTING.md](DUCTING.md#ducting-state)).
+
+Use the latest `discovery_run_id` for the current set of co-channel paths, and the latest `tropobeat.baseline.run_id` for the current baselines: each run publishes a fresh, dated set rather than updating the previous one. A baseline lists the co-channel paths of the latest discovery run; if that run failed at start-up, the first baselines have no path fields.
+
+**After upgrading** to a version with new fields (such as the `baseline` metricset), load the new index template and roll the data stream over, so the new fields get their proper types (for example the BER fields as `double` and `instance.host_ip` as `ip`) instead of types guessed from the first values: `./tropobeat setup --index-management -E setup.template.overwrite=true`, then `POST tropobeat-<version>/_rollover`.
 
 **Maps.** Every `location` is mapped as a `geo_point`, and the `path` fields as a `geo_shape`, so Kibana Maps can show LRFs, midpoints and transmitters as points and draw every co-channel path as a line. [DUCTING.md](DUCTING.md#9-kibana-maps-setup) describes a ducting map.
 
@@ -363,6 +415,13 @@ Weather poll: 1854 groups (1829 co-channel paths, 25 LRF-only); points: 5512 req
   2589 unique after merge, 52 requests; …
 ```
 
+```
+Baseline run 20261019T182258Z: 2260 demod instance baselines (… ok, … insufficient, … invalid, … no station)
+  from 7 days of log-metric-p-rfdemod-*; published: true (…)
+Demod stream: 24126 reports decoded (19079 locked) from 2815 demod instances at 207 LRFs;
+  8 rejected (0 malformed, 8 incomplete); 0 reconnects since start
+```
+
 Warnings worth acting on:
 
 | Message | Meaning |
@@ -370,6 +429,9 @@ Warnings worth acting on:
 | `demod LRF IDs not in lrf-coordinates (skipped): …` | The demods report LRF codes that aren't in the LRF list. Those sites are skipped. See rolling plan Q14. |
 | `skipped <LRF> RF <n>: own station … is N mi away …` | The LRF's own station is implausibly far away, which points to a wrong LRF code or coordinates. That channel is skipped. |
 | `lrf_sites: codes not found …` | A code in `lrf_sites` isn't in the LRF list. |
+| `demod data only goes back to …, less than the 7-day window` | The demod indices don't reach back over the baseline window: check their retention. |
+| `RabbitMQ …: checking exchange … NOT_FOUND` | The configured exchange doesn't exist (or has another type or durability). Tropobeat keeps retrying. |
+| `RabbitMQ …: …; reconnecting in …` | The connection, channel or consumer ended; tropobeat reconnects by itself. |
 | `Job <name> failed: …` | A run failed. The next run is still scheduled, and the previous co-channel paths stay in use. |
 
 Inputs with no call sign (`Spare`, `NA`) and channels whose station isn't a full-power FCC station are logged at info and debug level.
@@ -386,18 +448,28 @@ OPENMETEO_LIVE=1 go test -run TestLive ./internal/openmeteo/
 
 | Path | Contents |
 |---|---|
-| `beater/` | The beat: scheduler, the `cochannel` and `weather` jobs, event building |
+| `beater/` | The beat: scheduler, the `cochannel`, `weather` and `baseline` jobs, the in-memory baselines and ducting results, the demod stream loop, event building |
 | `cmd/insert/` | The `tropobeat insert` commands |
 | `config/` | Configuration and defaults |
 | `internal/lrf/` | LRF model, CSV loader |
 | `internal/fcc/` | FCC TV Query client and parser |
+| `internal/demod/` | Demod report model: fields, decoding, the demod instance (host IP, slot, input) |
 | `internal/cochannel/` | Demod channel query, co-channel discovery, geodesic midpoints |
 | `internal/openmeteo/` | Open-Meteo client (fetches and organises weather only) |
 | `internal/openmeteo/mock/` | Simulated Open-Meteo weather for dashboard building |
 | `internal/ducting/` | Refractivity, layers, ducts and scores |
 | `internal/elastic/` | Shared Elasticsearch client and helpers |
+| `internal/rabbitmqclient/` | RabbitMQ consumer for the demod stream, with reconnects |
 | `_meta/` | Field definitions and config templates (source for `mage update`) |
 | `scripts/` | The original Python prototypes |
+| `tools/demodreplay/` | Publishes the demod sample to a RabbitMQ exchange, to test the demod stream without inSITE |
+
+To try the demod stream locally, start a RabbitMQ broker, run tropobeat with `rabbitmq.enabled`, and replay the sample (here at 10× speed, with timestamps moved to now):
+
+```bash
+RABBITMQ_PASSWORD=… go run ./tools/demodreplay -declare -now -speed 10 \
+  sample/log-metric-p-rfdemod-2026.10.13.tar.gz
+```
 
 ## 12. Project documents
 
@@ -405,4 +477,5 @@ OPENMETEO_LIVE=1 go test -run TestLive ./internal/openmeteo/
 |---|---|
 | [ROLLING_PLAN.md](ROLLING_PLAN.md) | Phases and status, open questions, decisions, known issues, change log |
 | [DUCTING.md](DUCTING.md) | How the ducting calculation works, classes and scores, field reference, reading the results, Kibana Maps setup |
+| [DASHBOARD.md](DASHBOARD.md) | The Ducting Watch and Co-channel paths dashboards: installing, panels, using them, colours, changing them |
 | `tropobeat.reference.yml` | Every setting, with comments |

@@ -79,3 +79,59 @@ tropobeat:
   # "notable" only for super-refractive and ducting locations.
   #ducting:
     #publish: all
+
+  # Daily demod baselines: the median Pre-FEC BER and MER of every demod
+  # instance (host IP, slot and input) and RF channel, from the last
+  # window_days whole days of demod telemetry. Live telemetry is judged
+  # against them. Also runs once at start-up.
+  #baseline:
+    # Cron expression, UTC. Run after co-channel discovery.
+    #schedule: "30 3 * * *"
+    #window_days: 7
+    # Fewest locked reports (about one a minute) for a usable baseline.
+    #min_samples: 1440
+    # Smallest BER baseline: most medians are 0, so a spike is measured
+    # against max(median, ber_floor).
+    #ber_floor: 1e-6
+    # Treat the baselines as missing once they are this old (failed runs).
+    #max_age: 48h
+    # Publish each run's baselines as the baseline metricset.
+    #publish: true
+
+  # Live demod reports from RabbitMQ. Tropobeat declares its own queue,
+  # bound to the demod exchange, and keeps it bounded (reports older than
+  # message_ttl expire; beyond max_length the oldest are dropped).
+  rabbitmq:
+    #enabled: false
+    #host: "localhost"
+    #port: 8910
+    #vhost: "/"
+    #username: "insite"
+    # Required when enabled. Store it in the keystore rather than in this file:
+    #   tropobeat keystore add RABBITMQ_PASSWORD
+    #password: "${RABBITMQ_PASSWORD}"
+    #ssl:
+      #enabled: false
+      #ca_cert: "/etc/tropobeat/rabbitmq-ca.pem"
+      # For testing only.
+      #insecure: false
+
+    # The exchange the demod reports are published to. With
+    # exchange_declare "passive" (default) tropobeat only checks that it
+    # exists with this type and durability; "active" creates it, for
+    # development and replay setups.
+    #exchange: "x.tropobeat.demod"
+    #exchange_type: "direct"
+    #exchange_declare: "passive"
+    #durable: true
+    #routing_key: "demod.metrics"
+    #queue: "q.tropobeat.demod"
+
+    # Unacknowledged reports the broker sends ahead.
+    #prefetch: 500
+    #message_ttl: 5m
+    #max_length: 50000
+    # Reconnect delay: starts at reconnect_interval and doubles on each
+    # failure up to reconnect_max.
+    #reconnect_interval: 1s
+    #reconnect_max: 30s

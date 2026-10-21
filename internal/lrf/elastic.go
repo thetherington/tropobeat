@@ -14,8 +14,12 @@ import (
 const DefaultIndex = "lrf-coordinates"
 
 // IndexBody is the settings and mappings used to create the LRF index.
-// Coordinates are stored as a geo_point in the "location" field.
+// Coordinates are stored as a geo_point in the "location" field. The index is
+// in lookup mode so ES|QL can LOOKUP JOIN it on "code", for example to label
+// LRF codes with their city and state in dashboards. It is still searched
+// normally.
 const IndexBody = `{
+  "settings": { "index.mode": "lookup" },
   "mappings": {
     "dynamic": "strict",
     "properties": {

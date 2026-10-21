@@ -10,23 +10,25 @@ import (
 	"time"
 
 	"github.com/elastic/go-elasticsearch/v8"
+
+	"github.com/thetherington/tropobeat/internal/demod"
 )
 
-// Demod telemetry fields (rfdemod.rf_demod), all keyword or integer.
+// Demod telemetry fields used by the received-channel search; see package
+// demod for the full list.
 const (
-	fieldTimestamp   = "@timestamp"
-	fieldLRFID       = "rfdemod.rf_demod.s_lrf_id"
-	fieldRFChannel   = "rfdemod.rf_demod.i_rf_channel"
-	fieldInputTag    = "rfdemod.rf_demod.s_input_tag"
-	fieldInputStatus = "rfdemod.rf_demod.s_input_status"
+	fieldTimestamp   = demod.FieldTimestamp
+	fieldLRFID       = demod.FieldLRFID
+	fieldRFChannel   = demod.FieldRFChannel
+	fieldInputTag    = demod.FieldInputTag
+	fieldInputStatus = demod.FieldInputStatus
 
-	statusLocked  = "Locked"
+	statusLocked  = demod.StatusLocked
 	compositeSize = 1000
 )
 
-// DefaultDemodIndex is the default index pattern for demod telemetry, which
-// is stored in daily indices such as log-metric-p-rfdemod-2026.10.13.
-const DefaultDemodIndex = "log-metric-p-rfdemod-*"
+// DefaultDemodIndex is the default index pattern for demod telemetry.
+const DefaultDemodIndex = demod.DefaultIndex
 
 // Received is one RF channel an LRF receives, according to its demods.
 type Received struct {

@@ -11080,8 +11080,9 @@
   title: tropobeat
   description: >
     Fields published by tropobeat: co-channel paths (metricset cochannel), the
-    weather along them (metricset weather) and the ducting analysis of each
-    weather location (metricset ducting). See DUCTING.md for how ducting
+    weather along them (metricset weather), the ducting analysis of each
+    weather location (metricset ducting), and the 7-day baseline of each
+    demod instance (metricset baseline). See DUCTING.md for how ducting
     results are calculated and read.
   fields:
     - name: metricset
@@ -11090,7 +11091,68 @@
         - name: name
           type: keyword
           description: >
-            The kind of event: cochannel, weather or ducting.
+            The kind of event: cochannel, weather, ducting or baseline.
+
+    # Fields shared by every metricset, directly under tropobeat, so one
+    # dashboard filter or search works across all of them. Lists are always
+    # arrays, sorted and without duplicates; empty ones are left out.
+    - name: tropobeat.lrf_codes
+      type: keyword
+      description: >
+        LRF codes (upper-case) the event is about: the path's LRF, the LRFs
+        whose weather used a ducting location, or the baseline's LRF.
+    - name: tropobeat.path_ids
+      type: keyword
+      description: >
+        Co-channel paths, "<lrf code>:<facility id>:<rf channel>": the path
+        itself, the paths whose weather used a ducting location, or the paths
+        on a baseline's LRF and channel. Not set for an LRF without paths.
+    - name: tropobeat.rf_channels
+      type: integer
+      description: RF channels of the path, the paths using a location, or the baseline.
+    - name: tropobeat.bands
+      type: keyword
+      description: >
+        TV bands of rf_channels: low_vhf (2-6), high_vhf (7-13) or uhf
+        (14-69). Whether a duct traps a channel depends on its band.
+    - name: tropobeat.transmitter_call_signs
+      type: keyword
+      description: >
+        Call signs of the co-channel transmitters on the paths: the stations
+        that could interfere. Not the LRF's own stations.
+    - name: tropobeat.transmitter_facility_ids
+      type: keyword
+      description: >
+        FCC facility IDs of those transmitters. Stable when a call sign
+        changes.
+    - name: tropobeat.station_call_signs
+      type: keyword
+      description: >
+        The LRF's own stations on the channel(s), from the demod input tags.
+    - name: tropobeat.discovery_run_id
+      type: keyword
+      description: >
+        Co-channel discovery run the paths came from. Filter on the latest to
+        see the current paths. A baseline's own run is
+        tropobeat.baseline.run_id.
+    - name: tropobeat.forecast_time
+      type: date
+      description: >
+        The hour the weather applies to (weather and ducting events).
+        @timestamp is when it was fetched.
+    - name: tropobeat.ducting_state
+      type: keyword
+      description: >
+        normal, super_refractive, ducting (a ducting layer, but no duct thick
+        enough to trap the channel) or trapping (a duct traps the channel).
+        On a weather event it covers the path's points; on a ducting event
+        the location, trapping when a duct traps the channel of any path
+        using it. Not set when nothing could be analysed. See DUCTING.md.
+    - name: tropobeat.ducting_level
+      type: integer
+      description: >
+        ducting_state as 0 (normal) to 3 (trapping), for taking the maximum
+        over time or across paths.
 
     - name: tropobeat.cochannel
       type: group
@@ -11099,34 +11161,15 @@
         same-channel FCC transmitter within the search radius that is not the
         LRF's own station, and the geodesic midpoint between them.
       fields:
-        - name: run_id
-          type: keyword
-          description: Discovery run this path belongs to. Use the latest run.
-        - name: path_id
-          type: keyword
-          description: Path identifier, "<lrf code>:<facility id>:<rf channel>".
-        - name: rf_channel
-          type: integer
-          description: The RF channel shared by the LRF and the transmitter.
         - name: lrf
           type: group
           fields:
-            - name: code
-              type: keyword
-              description: LRF code.
             - name: location
               type: geo_point
               description: LRF location.
-            - name: call_signs
-              type: keyword
-              description: Call signs the LRF receives on this channel (from demod input tags).
         - name: transmitter
           type: group
           fields:
-            - name: call_sign
-              type: keyword
-            - name: facility_id
-              type: keyword
             - name: service
               type: keyword
             - name: erp_kw
@@ -11159,26 +11202,11 @@
         Weather from Open-Meteo for one co-channel path (its LRF, midpoint and
         transmitter), or for an LRF that has no co-channel paths.
       fields:
-        - name: run_id
-          type: keyword
-          description: Discovery run the path came from.
-        - name: path_id
-          type: keyword
-          description: Path identifier, or the LRF code for an LRF without paths.
-        - name: lrf_code
-          type: keyword
-        - name: rf_channel
-          type: integer
-        - name: transmitter_call_sign
-          type: keyword
         - name: path
           type: geo_shape
           description: >
             The path as a GeoJSON LineString (LRF, midpoint, transmitter), so
             Kibana Maps can draw it. Not set for an LRF without paths.
-        - name: forecast_time
-          type: date
-          description: The hour the weather applies to.
         - name: ducting
           type: group
           description: >
@@ -11260,28 +11288,16 @@
         One event per unique location; weather points link to it by
         profile_id. See DUCTING.md.
       fields:
-        - name: run_id
-          type: keyword
-          description: Discovery run the paths came from.
         - name: profile_id
           type: keyword
           description: >
             The location the weather was requested for, as "lat,lon"
             (rounded when coordinate_precision is set).
-        - name: forecast_time
-          type: date
-          description: The hour the weather applies to.
         - name: location
           type: geo_point
         - name: elevation_m
           type: float
           description: Terrain elevation, metres.
-        - name: path_ids
-          type: keyword
-          description: Co-channel paths whose weather used this location.
-        - name: lrf_codes
-          type: keyword
-          description: LRFs whose paths (or own weather) used this location.
         - name: class
           type: keyword
           description: >
@@ -11364,3 +11380,88 @@
               description: >
                 Duct strength: M at the base of the trapping layer minus M at
                 its top, M-units.
+
+    - name: tropobeat.baseline
+      type: group
+      description: >
+        The normal Pre-FEC BER and MER of one demod instance on one RF channel:
+        the medians of its locked reports over the baseline window (whole UTC
+        days up to the start of the run's day). Published by the daily
+        baseline run; use the latest run_id. Live telemetry is judged against
+        these values.
+      fields:
+        - name: run_id
+          type: keyword
+          description: Baseline run this record belongs to. Use the latest run.
+        - name: instance
+          type: group
+          description: >
+            The demod input: the demod frame's host IP, the card slot and the
+            input on the card.
+          fields:
+            - name: id
+              type: keyword
+              description: Instance identifier, "<host ip>/<slot>/<input>".
+            - name: host_ip
+              type: ip
+            - name: slot
+              type: integer
+            - name: input
+              type: integer
+        - name: lrf
+          type: group
+          fields:
+            - name: location
+              type: geo_point
+              description: LRF location, when the code is in the LRF list.
+        - name: demod_side
+          type: keyword
+          description: Demod side, A or B.
+        - name: card_label
+          type: keyword
+        - name: frame_label
+          type: keyword
+        - name: tags
+          type: keyword
+          description: >
+            Input tags seen in the window. The call signs parsed from them are
+            tropobeat.station_call_signs.
+        - name: status
+          type: keyword
+          description: >
+            ok (used to judge live telemetry), insufficient (fewer than
+            baseline.min_samples locked reports), invalid (saturated or
+            missing BER median) or no_station (the tags name no station, e.g.
+            spare inputs).
+        - name: samples
+          type: long
+          description: Locked reports the medians cover.
+        - name: window
+          type: group
+          fields:
+            - name: start
+              type: date
+              description: First locked report in the window.
+            - name: end
+              type: date
+              description: Last locked report in the window.
+            - name: days
+              type: float
+              description: Days between the first and last report.
+        - name: ber
+          type: group
+          fields:
+            - name: median
+              type: double
+              description: Median Pre-FEC BER.
+            - name: effective
+              type: double
+              description: >
+                The BER a spike is measured against: the median, or
+                baseline.ber_floor when the median is lower (usually 0).
+        - name: mer
+          type: group
+          fields:
+            - name: median_db
+              type: float
+              description: Median MER, dB.
