@@ -6,6 +6,7 @@ package config
 import (
 	"time"
 
+	"github.com/thetherington/tropobeat/internal/correlator"
 	"github.com/thetherington/tropobeat/internal/demod"
 	"github.com/thetherington/tropobeat/internal/ducting"
 	"github.com/thetherington/tropobeat/internal/elastic"
@@ -38,6 +39,9 @@ type Config struct {
 	RabbitMQ rabbitmqclient.Config `config:"rabbitmq"`
 	// Baseline configures the daily 7-day demod baselines.
 	Baseline BaselineConfig `config:"baseline"`
+	// Correlator configures the CCI correlation engine run on the live
+	// demod stream.
+	Correlator correlator.Config `config:"correlator"`
 }
 
 // BaselineConfig configures the daily baseline job: the median Pre-FEC BER
@@ -108,4 +112,5 @@ var DefaultConfig = Config{
 		MaxAge:     48 * time.Hour,
 		Publish:    true,
 	},
+	Correlator: correlator.DefaultConfig,
 }

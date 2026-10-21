@@ -9,6 +9,7 @@ import (
 	"github.com/elastic/elastic-agent-libs/mapstr"
 
 	"github.com/thetherington/tropobeat/internal/cochannel"
+	"github.com/thetherington/tropobeat/internal/correlator"
 	"github.com/thetherington/tropobeat/internal/ducting"
 	"github.com/thetherington/tropobeat/internal/lrf"
 	"github.com/thetherington/tropobeat/internal/openmeteo"
@@ -20,6 +21,10 @@ const (
 	metricsetWeather   = "weather"
 	metricsetDucting   = "ducting"
 	metricsetBaseline  = "baseline"
+	// metricsetCorrelation is a correlator verdict event and
+	// metricsetCorrelationTrace a decision-trace record.
+	metricsetCorrelation      = "correlation"
+	metricsetCorrelationTrace = "correlation_trace"
 )
 
 // cochannelEvent describes one co-channel path found by a discovery run.
@@ -56,8 +61,9 @@ func cochannelEvent(p cochannel.Path, runID string, at time.Time) beat.Event {
 // site is the LRF the instance belongs to, or nil when its LRF ID isn't in
 // the LRF list (the location is then left out). paths are the co-channel
 // paths on the instance's LRF and channel from discovery run discoveryRunID:
-// the transmitters that could interfere with it.
-func baselineEvent(b Baseline, site *lrf.LRF, paths []cochannel.Path, discoveryRunID, runID string, at time.Time) beat.Event {
+// the transmitters that could interfere with it. cc gives the correlator's
+// thresholds, published for reference next to the medians.
+func baselineEvent(b Baseline, site *lrf.LRF, paths []cochannel.Path, discoveryRunID, runID string, at time.Time, cc correlator.Config) beat.Event {
 	l := mapstr.M{}
 	if site != nil {
 		l["location"] = mapstr.M{"lat": site.Latitude, "lon": site.Longitude}
@@ -85,10 +91,14 @@ func baselineEvent(b Baseline, site *lrf.LRF, paths []cochannel.Path, discoveryR
 		"samples":     b.Samples,
 		"window":      window,
 		"ber": mapstr.M{
-			"median":    b.MedianBER,
-			"effective": b.EffectiveBER,
+			"median":          b.MedianBER,
+			"effective":       b.EffectiveBER,
+			"spike_threshold": cc.BERFactor * b.EffectiveBER,
 		},
-		"mer": mapstr.M{"median_db": b.MedianMER},
+		"mer": mapstr.M{
+			"median_db":         b.MedianMER,
+			"drop_threshold_db": b.MedianMER - cc.MERDropDB,
+		},
 	}
 
 	k := keys{

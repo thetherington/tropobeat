@@ -1,0 +1,18 @@
+{
+  "attributes": {
+    "description": "",
+    "kibanaSavedObjectMeta": {
+      "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"kuery\"},\"filter\":[]}"
+    },
+    "title": "[Tropobeat] Correlation reference",
+    "uiStateJSON": "{}",
+    "version": 1,
+    "visState": "{\"title\": \"[Tropobeat] Correlation reference\", \"type\": \"markdown\", \"aggs\": [], \"params\": {\"fontSize\": 10, \"openLinksInNewTab\": false, \"markdown\": \"#### Verdicts\\n| | |\\n|---|---|\\n| **0 clear** | no side degraded |\\n| **1 single_side** | one demod only: equipment, not CCI |\\n| **2 unpaired** | other side not reporting or its frame down |\\n| **3 dual_ducting_unknown** | both sides; no recent ducting |\\n| **4 dual_unexplained** | both sides; no path ducting |\\n| **5 cci_confirmed** | both sides **and** a co-channel path ducting or trapping |\\n\\n#### Decision trace\\nCategories: **pair** and **hysteresis** by default; turn on **input**, **ducting**, **skip**, **sweep** with `correlator.trace.categories` (use `trace.lrf_sites` with **input**).\\n\\nDecision: **hit** found, **miss** not found, **skip** not judged or waiting for the other side.\\n\\n#### Why didn't it alert?\\nPick the LRF and channel, then read the **Pair decisions** message: *other_side_stale* (side B silent), *ducting_none_on_channel* (no path ducting), or no hysteresis records (never 3 anomalous reports in a row; enable **input**).\\n\\nRules: CORRELATION.md\"}}"
+  },
+  "coreMigrationVersion": "8.8.0",
+  "id": "tropobeat-correlation-reference",
+  "managed": false,
+  "references": [],
+  "type": "visualization",
+  "typeMigrationVersion": "8.5.0"
+}

@@ -4,7 +4,7 @@
 
 Tropobeat is an [Elastic Beat](https://www.elastic.co/beats) that watches for **tropospheric ducting**, the weather condition that lets distant TV transmitters reach a Local Receive Facility (LRF) on the same RF channel as the station it is meant to receive. It finds each LRF's co-channel paths, fetches the weather along them, works out how likely a duct is, and publishes the results to Elasticsearch for dashboards, maps and (in later phases) alerting.
 
-This README describes **what tropobeat does today**. It is updated as phases in the [rolling plan](ROLLING_PLAN.md) are completed. For how the ducting calculation works, see **[DUCTING.md](DUCTING.md)**.
+This README describes **what tropobeat does today**. It is updated as phases in the [rolling plan](ROLLING_PLAN.md) are completed. For how the ducting calculation works, see **[DUCTING.md](DUCTING.md)**; for how co-channel interference is detected from the live telemetry, see **[CORRELATION.md](CORRELATION.md)**.
 
 ## Contents
 
@@ -41,17 +41,23 @@ Tropobeat's goal is to move operations from reactive troubleshooting to proactiv
 | Ducting calculation on every weather poll: refractivity, layer classes, ducts, a ducting score per point and a ducting index per path | ✅ (calibration pending) |
 | Mock weather that simulates every ducting state, for building dashboards | ✅ |
 | Daily 7-day baselines (median Pre-FEC BER and MER) for every demod input, published for dashboards | ✅ |
-| Live demod reports from a RabbitMQ exchange (received and counted; not yet evaluated) | ✅ |
-| Judging live MER and Pre-FEC BER against the baselines and correlating them with ducting | 📋 planned (Phases 4b–5) |
+| Live demod reports from a RabbitMQ exchange | ✅ |
+| **Correlation engine:** judging each live report against its baseline (BER spike, MER drop, lock loss), pairing the side A and B demods, and confirming co-channel interference when a co-channel path on the channel is ducting, with the likely interfering transmitter named ([CORRELATION.md](CORRELATION.md)) | ✅ (thresholds to be calibrated) |
+| Searchable decision trace of the correlation engine, in categories that can be turned on separately | ✅ |
+| Replay tool scenarios that reproduce every correlation verdict with mock weather, and a looping demo mode | ✅ |
+| Outage and frame-fault reporting | 📋 planned |
 | **Ducting Watch** Kibana dashboard: headline figures, map, network and per-path heat maps, duct detail ([DASHBOARD.md](DASHBOARD.md)) | ✅ |
 | **Co-channel paths** Kibana dashboard: every co-channel path from the latest discovery run on one map, to check discovery ([DASHBOARD.md](DASHBOARD.md)) | ✅ |
-| Forecasting at-risk LRFs, alerting, the correlation dashboard | 📋 planned (Phases 6–7) |
+| **Correlation debug** Kibana dashboard: latest verdicts, verdicts over time, decision-trace reasons, pair decisions with explanations, MER and BER against thresholds ([DASHBOARD.md](DASHBOARD.md#4-correlation-debug)) | ✅ |
+| Forecasting at-risk LRFs, alerting, the event timeline dashboard | 📋 planned (Phases 6–7) |
 
 See the [rolling plan](ROLLING_PLAN.md) for detailed status, open questions and decisions.
 
 ## 3. How it works
 
-![How tropobeat works: the LRF list, FCC transmitters, demod telemetry, Open-Meteo and the RabbitMQ demod exchange (fed by the demod pollers, outside tropobeat) feed the cochannel, weather, baseline and demod stream jobs, which publish the cochannel, weather, ducting and baseline metricsets and keep ducting, baselines and live reports in memory for the planned correlation engine](docs/images/how-it-works.svg)
+![How tropobeat works: reference data (the LRF list and FCC transmitters), demod telemetry history, Open-Meteo weather and live demod reports flow through daily co-channel discovery (03:00 UTC), hourly weather and ducting, and daily baselines (03:30 UTC) into memory and the tropobeat index; each live report is checked against its own baseline, sides A and B must agree, and the ducting on the channel's co-channel paths decides the verdict, shown here as CCI confirmed at TERH RF 31 with WKMA-TV as the likely interferer](docs/images/how-it-works.png)
+
+*Colour shows how often data arrives: teal every minute, amber hourly, violet daily, grey when the reference data is updated. The episode shown is from a replayed test run with simulated weather.*
 
 **Reference data.** Two `insert` commands load the reference data tropobeat works from: the LRF sites and the FCC transmitters. They run outside the beat (by hand or from cron) and can run while tropobeat is running. The demod telemetry is already collected by inSITE; tropobeat only reads it.
 
@@ -79,9 +85,18 @@ See the [rolling plan](ROLLING_PLAN.md) for detailed status, open questions and 
 
 The baselines are kept in memory, replaced as a whole on each run (a failed run keeps the previous ones), and published as `baseline` events. They are always recomputed from the demod telemetry (the full network takes about 10 seconds), never read back from the published events.
 
-**The demod stream.** With `rabbitmq.enabled`, tropobeat receives the live demod reports (the same JSON as the demod telemetry documents) from a RabbitMQ exchange. It declares its own queue, bound to the exchange, so it gets a copy of every report without taking them from other consumers. The queue is bounded (reports older than 5 minutes expire, and beyond 50,000 the oldest are dropped), so a stopped tropobeat can't build up a backlog of stale reports. Tropobeat reconnects by itself after a broker restart, a dropped connection or a deleted queue, waiting longer after each failure (1 s, doubling up to 30 s). In this phase the reports are decoded and counted; judging them against the baselines and the ducting results comes in Phase 4b.
+**The demod stream.** With `rabbitmq.enabled`, tropobeat receives the live demod reports (the same JSON as the demod telemetry documents) from a RabbitMQ exchange. It declares its own queue, bound to the exchange, so it gets a copy of every report without taking them from other consumers. The queue is bounded (reports older than 5 minutes expire, and beyond 50,000 the oldest are dropped), so a stopped tropobeat can't build up a backlog of stale reports. Tropobeat reconnects by itself after a broker restart, a dropped connection or a deleted queue, waiting longer after each failure (1 s, doubling up to 30 s). Each report is handed to the correlation engine and then acknowledged.
 
-The weather job also keeps the latest ducting result of every co-channel path in memory, for the same live checks.
+The weather job also keeps the latest ducting result of every co-channel path in memory, for the live checks.
+
+**The correlation engine** judges every live report as it arrives, in four steps (details in [CORRELATION.md](CORRELATION.md)):
+
+1. Is the input stressed? A BER spike (10 × its effective baseline BER, or a saturated reading), an MER drop (3 dB below its median) or loss of lock, against **its own** baseline.
+2. Is it sustained? An input is *degraded* after 3 anomalous reports in a row and clears after 3 clean ones.
+3. Do sides A and B agree? They share one antenna feed, so both degraded means the received signal is bad, not one demod. A frame that goes entirely dark is never counted.
+4. Is a co-channel path on that channel ducting (dM/dh < 0, `ducting` or `trapping`) in the latest weather poll? Then the verdict is **`cci_confirmed`**, naming the strongest path's transmitter.
+
+Each LRF and channel has one verdict (`clear`, `single_side`, `unpaired`, `dual_ducting_unknown`, `dual_unexplained` or `cci_confirmed`), published as `correlation` events when it starts, changes, every 5 minutes while it lasts, and when it clears. A decision trace (`correlation_trace`) records how each verdict was reached.
 
 No job ever overlaps itself: a run that is due while the previous one is still going is skipped. Stopping tropobeat waits for running work to finish.
 
@@ -231,7 +246,7 @@ ES_PASSWORD=…
 
 At start-up tropobeat checks the LRF list and stops with a clear message if the cluster is unreachable or the index is missing or empty.
 
-**Dashboards.** Load the Ducting Watch and Co-channel paths dashboards into Kibana once `setup.kibana` is set: `./tropobeat setup --dashboards -e` (from a source checkout, add `-E setup.dashboards.directory=_meta/kibana`). See [DASHBOARD.md](DASHBOARD.md).
+**Dashboards.** Load the Ducting Watch, Co-channel paths and Correlation debug dashboards into Kibana once `setup.kibana` is set: `./tropobeat setup --dashboards -e` (from a source checkout, add `-E setup.dashboards.directory=_meta/kibana`). See [DASHBOARD.md](DASHBOARD.md).
 
 **Useful one-off overrides** (`-E` overrides any setting):
 
@@ -269,8 +284,73 @@ The weather is built so the ducting calculation lands on a chosen outcome:
 | `elevated` | An elevated duct a few hundred metres up that traps UHF. |
 | `trapped_uhf` | A surface duct of about 120 m that traps UHF but not VHF. |
 | `trapped` | A thick surface duct (about 360 m) that traps every channel, RF 2 upwards; score about 0.9–1. |
+| `no_data` | No values at all, as when the weather service has gaps: the ducting calculation has insufficient data. |
+
+**Per-LRF scenarios.** `openmeteo.mock.sites` gives chosen LRFs their own scenario, applied to every point of their co-channel paths, for example `sites: {TERH: trapped, PROV: ducting, BOS: normal}`. Every other LRF keeps `scenario`. This lines the ducting up with replayed test telemetry ([testing the correlator](#testing-the-correlator-and-demos)).
+
+**Failing polls.** `openmeteo.mock.fail_every` and `fail_for` make the mock fail for `fail_for` at the start of every `fail_every` (aligned to the clock), so polls fail and the ducting results go stale, for example `fail_every: 50m`, `fail_for: 4m`.
 
 With `period: 1m` and `cycle: 10m`, each site goes through every state in about ten minutes. All mock locations are at sea level, so no levels are dropped as underground.
+
+### Testing the correlator and demos
+
+The replay tool can inject conditions into the demod sample on chosen LRFs, channels and sides at set times. Together with per-LRF mock weather, that reproduces every correlation verdict on purpose. Two scenarios are shipped in `tools/demodreplay/scenarios/`:
+
+| Scenario | What it shows |
+|---|---|
+| `all-conditions.yml` | Every verdict, anomaly, hysteresis transition, guard and trace reason, one LRF and channel each, in about 45 minutes (repeats every 50) |
+| `demo.yml` | A 60-minute cycle of presentation-paced episodes: a trapping CCI episode, a ducting CCI episode, a fade that isn't CCI, a single-demod fault and a frame going dark |
+
+Both use the tropobeat settings in `scenarios/all-conditions.tropobeat.yml`: LRFs TERH, PROV, BOS and IND, 1-minute polls, mock weather per LRF (TERH trapping, PROV ducting, BOS normal, IND no data) and every trace category.
+
+```bash
+# 1. tropobeat with the scenario settings merged into tropobeat.yml
+./tropobeat -e -c tropobeat.yml
+
+# 2. the replay: -quiet makes the scenario LRFs' own readings healthy, so
+#    only the injections show; -loop replays the sample endlessly
+RABBITMQ_PASSWORD=… go run ./tools/demodreplay -declare -now -loop -quiet \
+  -scenario tools/demodreplay/scenarios/all-conditions.yml \
+  sample/log-metric-p-rfdemod-2026.10.13.tar.gz
+```
+
+The replay logs each step as it starts and ends, and a status line every minute, so the published verdicts can be checked against its timeline.
+
+A step names an `lrf`, an `rf` channel (or `"*"` for every channel), a `side` (`A`, `B` or `AB`), a `start` offset and a `duration`, and an `action`:
+
+| Action | Rewrites the matching reports |
+|---|---|
+| `ber` | BER to `factor` (default 50) × the input's median BER (at least 1e-6) |
+| `saturate` | BER to the saturated value 16.777215 |
+| `mer` | MER down by `db` (default 6), power unchanged |
+| `fade` | MER and power both down by `db` |
+| `unlock` | Not locked: MER 0, power −80 dBm |
+| `drop` | The report is withheld |
+| `noside` | The side label is blanked |
+| `flap` | `bad` BER spikes then `good` clean reports, repeating (default 2 and 2) |
+
+`repeat_every` restarts the scenario (default: 5 minutes after its last step ends; `0s` runs it once).
+
+**Unattended demos.** With `-loop`, each pass of the 14-minute sample carries on from the previous pass's timestamps, so every input keeps reporting about once a minute across the join. If the broker connection drops, the replay reconnects by itself (waiting 1 s, doubling up to 30 s) and skips the reports that were due meanwhile rather than sending them in a burst. For a demo machine, run both under systemd, for example:
+
+```ini
+# /etc/systemd/system/tropobeat-demo-replay.service
+[Unit]
+Description=tropobeat demo replay
+After=network-online.target rabbitmq-server.service
+
+[Service]
+WorkingDirectory=/opt/tropobeat
+Environment=RABBITMQ_PASSWORD=…
+ExecStart=/opt/tropobeat/demodreplay -declare -now -loop -quiet \
+  -scenario tools/demodreplay/scenarios/demo.yml sample/log-metric-p-rfdemod-2026.10.13.tar.gz
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+(build the tool with `go build -o demodreplay ./tools/demodreplay`), or simply `nohup … &`.
 
 ## 8. Configuration
 
@@ -374,6 +454,26 @@ The key names match routelogbeat's `rabbitmq_client` section.
 
 If the queue's settings (`durable`, `message_ttl`, `max_length`) are changed after it was created, the broker refuses the new declaration; delete the queue so tropobeat can recreate it.
 
+### `correlator`: correlation engine
+
+Runs on the live demod stream, so only with `rabbitmq.enabled`. [CORRELATION.md](CORRELATION.md#11-settings-reference) explains every setting.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `enabled`, `publish` | `true`, `true` | Run the engine; publish its verdicts as `correlation` events. |
+| `ber_factor` | `10` | BER spike: at least this many times the effective baseline BER. |
+| `mer_drop_db` | `3` | MER drop: at least this many dB below the baseline median. |
+| `lock_loss` | `true` | Count loss of lock on a normally locked input as an anomaly. |
+| `hysteresis_cycles` | `3` | Reports in a row to become degraded, and to clear. |
+| `power_drop_db` | `3` | Power fall that makes the signature `dropping` (a fade) rather than `steady_or_rising`. |
+| `stale_after`, `expire_after` | `90s`, `3m` | How old a side's last report may be; when a silent input's live state is dropped. |
+| `pair_grace` | `2m` | How long a one-sided verdict must hold before it is reported. |
+| `snapshot_interval` | `5m` | How often an ongoing episode is re-published. `0` = never. |
+| `sweep_interval`, `input_buffer` | `10s`, `1024` | Internal timing and queue depth. |
+| `trace.categories` | `[pair, hysteresis]` | Decision-trace categories to publish: `input`, `skip`, `hysteresis`, `pair`, `ducting`, `sweep`. `[]` turns tracing off. |
+| `trace.lrf_sites` | `[]` (all) | Limit tracing to these LRFs; use with `input`, which records every report. |
+| `trace.buffer`, `trace.log` | `4096`, `false` | Trace records that may wait (beyond it they are dropped and counted); also write them to the log at debug level (selector `correlator`). |
+
 ## 9. What tropobeat publishes
 
 Events go to tropobeat's output, by default the `tropobeat-<version>` data stream (for example `tropobeat-8.18.0`). Each event has `metricset.name` set to one of:
@@ -382,8 +482,10 @@ Events go to tropobeat's output, by default the `tropobeat-<version>` data strea
 |---|---|---|
 | `cochannel` | Co-channel path, per discovery run | `tropobeat.cochannel.lrf.location`, `transmitter.{service, erp_kw, location}`, `midpoint.location`, `distance_mi`, `bearing_deg`, `path` (the path as a line) |
 | `weather` | Co-channel path (or LRF with no paths), per poll | `tropobeat.weather.path`; `lrf`/`midpoint`/`transmitter`, each with `location`, `elevation_m`, `surface` and `levels[]` (pressure, height, temperature, humidity) and a `ducting` summary; and the path's `ducting.{index, frequency_mhz, trapped}` |
-| `baseline` | Demod instance and RF channel, per baseline run | `tropobeat.baseline.run_id`, `instance.{id, host_ip, slot, input}`, `lrf.location`, `demod_side`, `card_label`, `frame_label`, `tags`, `status`, `samples`, `window.{start, end, days}`, `ber.{median, effective}`, `mer.median_db` |
+| `baseline` | Demod instance and RF channel, per baseline run | `tropobeat.baseline.run_id`, `instance.{id, host_ip, slot, input}`, `lrf.location`, `demod_side`, `card_label`, `frame_label`, `tags`, `status`, `samples`, `window.{start, end, days}`, `ber.{median, effective, spike_threshold}`, `mer.{median_db, drop_threshold_db}` |
 | `ducting` | Unique weather location, per poll | The full analysis: refractivity at every height, every layer's gradient and class, the ducts found, and the score and class. See [DUCTING.md](DUCTING.md#7-field-reference). |
+| `correlation` | Change in an LRF and channel's verdict, and every 5 minutes while not clear | `tropobeat.correlation.{kind, state, previous_state, severity, reason, strength}`, `episode.{id, start, duration_s, peak_state}`, `lrf.location`, `sides.{a,b}` (each side's view, readings, anomalies, signature and inputs), `ducting.{status, strongest, active_call_signs, …}`. See [CORRELATION.md](CORRELATION.md#12-field-reference). |
+| `correlation_trace` | Decision of the correlation engine, in the enabled categories | `tropobeat.correlation_trace.{category, reason, decision, message, episode_id, state}`, `input`, `sides`, `ducting`, `sweep`, `lrf.location` |
 
 **Shared fields.** The identifying fields sit directly under `tropobeat` and are the same on every metricset, so one dashboard filter or search works across all of them. Lists are always arrays.
 
@@ -395,6 +497,8 @@ Events go to tropobeat's output, by default the `tropobeat-<version>` data strea
 | `discovery_run_id` | ✓ | ✓ | ✓ | when it has paths |
 | `forecast_time` | | ✓ | ✓ | |
 | `ducting_state`, `ducting_level` (0–3) | | ✓ | ✓ | |
+
+`correlation` and `correlation_trace` events carry the same fields as a `baseline`: the LRF, the channel and every co-channel path on it, plus (on `correlation`) the ducting state of the strongest path.
 
 `bands` is `low_vhf`, `high_vhf` or `uhf`. `ducting_state` is `normal`, `super_refractive`, `ducting` or `trapping` ([DUCTING.md](DUCTING.md#ducting-state)).
 
@@ -434,6 +538,15 @@ Warnings worth acting on:
 | `RabbitMQ …: …; reconnecting in …` | The connection, channel or consumer ended; tropobeat reconnects by itself. |
 | `Job <name> failed: …` | A run failed. The next run is still scheduled, and the previous co-channel paths stay in use. |
 
+The correlation engine logs every verdict change and a summary every minute:
+
+```
+Correlation TERH RF 31: start cci_confirmed (cci_confirmed); likely interferer WDTN (TERH:…:31, … mi, trapping)
+Correlation TERH RF 31: clear cci_confirmed (clear); lasted 15m2s, peak cci_confirmed
+Correlator: 2812 reports judged, 40 skipped (no usable baseline); 2241 inputs live;
+  pairs not clear: 1 cci_confirmed; 3 events, 120 trace records published, 0 trace records dropped
+```
+
 Inputs with no call sign (`Spare`, `NA`) and channels whose station isn't a full-power FCC station are logged at info and debug level.
 
 ## 11. Development
@@ -460,9 +573,10 @@ OPENMETEO_LIVE=1 go test -run TestLive ./internal/openmeteo/
 | `internal/ducting/` | Refractivity, layers, ducts and scores |
 | `internal/elastic/` | Shared Elasticsearch client and helpers |
 | `internal/rabbitmqclient/` | RabbitMQ consumer for the demod stream, with reconnects |
+| `internal/correlator/` | The correlation engine: per-input rules, hysteresis, A/B pairing, ducting evidence, verdicts and the decision trace |
 | `_meta/` | Field definitions and config templates (source for `mage update`) |
 | `scripts/` | The original Python prototypes |
-| `tools/demodreplay/` | Publishes the demod sample to a RabbitMQ exchange, to test the demod stream without inSITE |
+| `tools/demodreplay/` | Publishes the demod sample to a RabbitMQ exchange, to test the demod stream and the correlator without inSITE; scenarios in `scenarios/` |
 
 To try the demod stream locally, start a RabbitMQ broker, run tropobeat with `rabbitmq.enabled`, and replay the sample (here at 10× speed, with timestamps moved to now):
 
@@ -477,5 +591,6 @@ RABBITMQ_PASSWORD=… go run ./tools/demodreplay -declare -now -speed 10 \
 |---|---|
 | [ROLLING_PLAN.md](ROLLING_PLAN.md) | Phases and status, open questions, decisions, known issues, change log |
 | [DUCTING.md](DUCTING.md) | How the ducting calculation works, classes and scores, field reference, reading the results, Kibana Maps setup |
-| [DASHBOARD.md](DASHBOARD.md) | The Ducting Watch and Co-channel paths dashboards: installing, panels, using them, colours, changing them |
+| [CORRELATION.md](CORRELATION.md) | How co-channel interference is detected: the per-input rules, A/B pairing, the ducting evidence, the verdicts, the decision trace, settings and fields |
+| [DASHBOARD.md](DASHBOARD.md) | The Ducting Watch, Co-channel paths and Correlation debug dashboards: installing, panels, using them, colours, changing them |
 | `tropobeat.reference.yml` | Every setting, with comments |

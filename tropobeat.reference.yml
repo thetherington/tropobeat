@@ -85,10 +85,20 @@ tropobeat:
       #enabled: false
       # mixed (every location cycles through all states, varying with
       # place), or one state everywhere: normal, super_refractive, ducting
-      # (thin, traps nothing), elevated, trapped_uhf, trapped (traps VHF too).
+      # (thin, traps nothing), elevated, trapped_uhf, trapped (traps VHF too),
+      # no_data (no values: insufficient data).
       #scenario: mixed
       # mixed only: how long each location takes to pass through every state.
       #cycle: 6h
+      # Per-LRF scenarios, applied to every point of the LRF's co-channel
+      # paths, to line ducting up with replayed test telemetry.
+      #sites:
+        #TERH: trapped
+        #BOS: normal
+      # Fail every poll for fail_for at the start of every fail_every, so
+      # the ducting results go stale. 0 = never.
+      #fail_every: 0
+      #fail_for: 0
 
     # Weather models to query. Empty uses Open-Meteo's best_match.
     #models: []
@@ -195,6 +205,65 @@ tropobeat:
     # failure up to reconnect_max.
     #reconnect_interval: 1s
     #reconnect_max: 30s
+
+  # The correlation engine: judges each live demod report against its
+  # baseline, pairs the side A and B demods of each LRF and RF channel, and
+  # confirms co-channel interference (CCI) when both sides are degraded and
+  # a co-channel path on the channel is ducting. Runs only with rabbitmq
+  # enabled. See CORRELATION.md.
+  #correlator:
+    #enabled: true
+    # Publish verdicts as the correlation metricset.
+    #publish: true
+
+    # A locked report is a BER spike when its Pre-FEC BER is at least
+    # ber_factor x the baseline's effective BER (or saturated), and an MER
+    # drop when its MER is at least mer_drop_db below the baseline median.
+    #ber_factor: 10
+    #mer_drop_db: 3
+    # Count an unlocked report from a normally locked input as an anomaly.
+    #lock_loss: true
+    # Anomalous reports in a row that make an input degraded, and clean
+    # reports in a row that clear it.
+    #hysteresis_cycles: 3
+    # A degraded input whose power falls this far below its level before
+    # the degradation has a "dropping" signature (a fade) instead of
+    # "steady_or_rising" (typical of interference).
+    #power_drop_db: 3
+
+    # How old an input's last report can be and still count for its side.
+    #stale_after: 90s
+    # An input silent this long loses its live state; a gap this long
+    # restarts its counters.
+    #expire_after: 3m
+    # How long a one-sided verdict (single_side, unpaired) must hold before
+    # it is reported, so the other side can catch up.
+    #pair_grace: 2m
+    # Re-publish a pair that is not clear this often. 0 = off.
+    #snapshot_interval: 5m
+    # How often silent inputs, grace periods, ducting changes and
+    # snapshots are checked.
+    #sweep_interval: 10s
+    # Reports that can wait for the engine.
+    #input_buffer: 1024
+
+    # Decision trace, published as the correlation_trace metricset.
+    #trace:
+      # input (every report judged), skip (reports that can't be judged,
+      # once per input per hour), hysteresis (inputs becoming or ceasing to
+      # be degraded or stressed), pair (A/B decisions when not clear or
+      # changing), ducting (path-by-path ducting for degraded pairs) and
+      # sweep (a summary every sweep_interval). [] turns tracing off.
+      #categories: [pair, hysteresis]
+      # Limit tracing to these LRF codes (empty = all). Use this with the
+      # input category, which records about one record per input a minute.
+      #lrf_sites: []
+      # Trace records that can wait to be published; beyond it they are
+      # dropped and counted, so tracing never slows the engine.
+      #buffer: 4096
+      # Also write every trace record to the log at debug level (selector
+      # "correlator").
+      #log: false
 
 # ================================== General ===================================
 

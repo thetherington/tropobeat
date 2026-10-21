@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
@@ -23,6 +24,10 @@ type snapshot struct {
 	At    time.Time
 	LRFs  []lrf.LRF
 	Paths []cochannel.Path
+
+	// idx is built on first use by the correlation events (see index).
+	indexOnce sync.Once
+	idx       *snapshotIndex
 }
 
 // loadLRFs reads the LRF list and applies the lrf_sites filter. It returns
@@ -97,6 +102,7 @@ func (bt *tropobeat) runCochannel(ctx context.Context) error {
 	// Swap the new LRFs and paths in atomically. Only reached on success,
 	// so a failed run leaves the weather job using the previous snapshot.
 	bt.state.Store(&snapshot{RunID: runID, At: start, LRFs: selected, Paths: res.Paths})
+	setMockSites(bt.mockSites, bt.config.OpenMeteo.Mock.Sites, selected, res.Paths)
 
 	// Publish one event per discovered path.
 	events := make([]beat.Event, len(res.Paths))
@@ -239,11 +245,16 @@ func (bt *tropobeat) runWeather(ctx context.Context) error {
 	// Keep only complete groups, so a path event always has all three
 	// points. Work out each group's LRF code: from the path for a path
 	// group (path is non-nil), or the group ID for an LRF-only group.
-	var complete []fetchedGroup
+	var complete, incompletePaths []fetchedGroup
 	incomplete := 0
 	for _, g := range results {
 		if !g.Complete() || len(g.Points) == 0 {
 			incomplete++
+			// Kept for the ducting store, so the path counts as unknown
+			// rather than missing (see pathDuctingFrom).
+			if p := paths[g.ID]; p != nil {
+				incompletePaths = append(incompletePaths, fetchedGroup{group: g, lrfCode: p.LRFCode, path: p})
+			}
 			continue
 		}
 		fg := fetchedGroup{group: g, lrfCode: lrfOnly[g.ID], path: paths[g.ID]}
@@ -260,7 +271,7 @@ func (bt *tropobeat) runWeather(ctx context.Context) error {
 	// checks. A poll where nothing was fetched leaves the previous results,
 	// which stop counting once they are older than 2 × period.
 	if len(complete) > 0 {
-		bt.ducting.swap(start, pathDuctingFrom(complete, locs))
+		bt.ducting.swap(start, pathDuctingFrom(append(complete, incompletePaths...), locs))
 	}
 
 	// One weather event per group, then the ducting events chosen by

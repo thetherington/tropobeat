@@ -69,10 +69,20 @@ tropobeat:
       #enabled: false
       # mixed (every location cycles through all states, varying with
       # place), or one state everywhere: normal, super_refractive, ducting
-      # (thin, traps nothing), elevated, trapped_uhf, trapped (traps VHF too).
+      # (thin, traps nothing), elevated, trapped_uhf, trapped (traps VHF too),
+      # no_data (no values: insufficient data).
       #scenario: mixed
       # mixed only: how long each location takes to pass through every state.
       #cycle: 6h
+      # Per-LRF scenarios, applied to every point of the LRF's co-channel
+      # paths, to line ducting up with replayed test telemetry.
+      #sites:
+        #TERH: trapped
+        #BOS: normal
+      # Fail every poll for fail_for at the start of every fail_every, so
+      # the ducting results go stale. 0 = never.
+      #fail_every: 0
+      #fail_for: 0
 
   # Ducting calculation, run on every weather poll (see DUCTING.md).
   # "all" publishes a ducting event for every location on every poll;
@@ -135,3 +145,26 @@ tropobeat:
     # failure up to reconnect_max.
     #reconnect_interval: 1s
     #reconnect_max: 30s
+
+  # The correlation engine: judges each live demod report against its
+  # baseline, pairs the side A and B demods of each LRF and RF channel, and
+  # confirms co-channel interference (CCI) when both sides are degraded and
+  # a co-channel path on the channel is ducting. Runs only with rabbitmq
+  # enabled. See CORRELATION.md.
+  #correlator:
+    #enabled: true
+    # Publish verdicts as the correlation metricset.
+    #publish: true
+    # BER spike: BER at least ber_factor x the baseline's effective BER.
+    #ber_factor: 10
+    # MER drop: MER at least mer_drop_db below the baseline median.
+    #mer_drop_db: 3
+    # Reports in a row needed to become degraded, and to clear.
+    #hysteresis_cycles: 3
+    # Decision trace, published as the correlation_trace metricset:
+    # input, skip, hysteresis, pair, ducting, sweep. [] turns it off.
+    #trace:
+      #categories: [pair, hysteresis]
+      # Limit tracing to these LRF codes (empty = all). Use this with the
+      # input category, which records every report.
+      #lrf_sites: []

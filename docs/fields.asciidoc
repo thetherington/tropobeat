@@ -15671,7 +15671,7 @@ type: text
 [[exported-fields-tropobeat]]
 == tropobeat fields
 
-Fields published by tropobeat: co-channel paths (metricset cochannel), the weather along them (metricset weather), the ducting analysis of each weather location (metricset ducting), and the 7-day baseline of each demod instance (metricset baseline). See DUCTING.md for how ducting results are calculated and read.
+Fields published by tropobeat: co-channel paths (metricset cochannel), the weather along them (metricset weather), the ducting analysis of each weather location (metricset ducting), the 7-day baseline of each demod instance (metricset baseline), and the correlation engine's verdicts (metricset correlation) and decision trace (metricset correlation_trace). See DUCTING.md for how ducting results are calculated and read, and CORRELATION.md for the correlation engine.
 
 
 
@@ -15679,7 +15679,7 @@ Fields published by tropobeat: co-channel paths (metricset cochannel), the weath
 *`metricset.name`*::
 +
 --
-The kind of event: cochannel, weather, ducting or baseline.
+The kind of event: cochannel, weather, ducting, baseline, correlation or correlation_trace.
 
 
 type: keyword
@@ -16721,6 +16721,16 @@ type: double
 
 --
 
+*`tropobeat.baseline.ber.spike_threshold`*::
++
+--
+BER at or above which a live report is a spike: correlator.ber_factor x effective. For reference.
+
+
+type: double
+
+--
+
 
 *`tropobeat.baseline.mer.median_db`*::
 +
@@ -16728,6 +16738,2014 @@ type: double
 Median MER, dB.
 
 type: float
+
+--
+
+*`tropobeat.baseline.mer.drop_threshold_db`*::
++
+--
+MER at or below which a live report is a drop: the median minus correlator.mer_drop_db. For reference.
+
+
+type: float
+
+--
+
+[float]
+=== tropobeat.correlation
+
+A verdict of the correlation engine for one LRF and RF channel (its A/B pair): whether the degradation of the channel is co-channel interference carried by a duct. Published when the verdict starts, changes, clears, and every correlator.snapshot_interval while it is not clear. See CORRELATION.md.
+
+
+
+*`tropobeat.correlation.kind`*::
++
+--
+start (the pair left clear), update (the state or, while cci_confirmed, the ducting evidence changed), ongoing (re-published every correlator.snapshot_interval) or clear.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.state`*::
++
+--
+clear, single_side, unpaired, dual_ducting_unknown, dual_unexplained or cci_confirmed. See CORRELATION.md.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.previous_state`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation.severity`*::
++
+--
+The state as 0 (clear) to 5 (cci_confirmed).
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation.reason`*::
++
+--
+The rule that decided the state.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.strength`*::
++
+--
+For cci_confirmed: ducting or trapping, from the strongest path.
+
+
+type: keyword
+
+--
+
+
+*`tropobeat.correlation.episode.id`*::
++
+--
+"<lrf>:<rf channel>:<start>"; shared by every event and trace record of one episode.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.episode.start`*::
++
+--
+type: date
+
+--
+
+*`tropobeat.correlation.episode.duration_s`*::
++
+--
+Seconds since the episode started.
+
+
+type: float
+
+--
+
+*`tropobeat.correlation.episode.peak_state`*::
++
+--
+Most severe state reached in the episode.
+
+
+type: keyword
+
+--
+
+
+*`tropobeat.correlation.lrf.location`*::
++
+--
+LRF location, when the code is in the LRF list.
+
+
+type: geo_point
+
+--
+
+
+[float]
+=== a
+
+Side A of the pair.
+
+
+
+*`tropobeat.correlation.sides.a.view`*::
++
+--
+degraded, recovering (still degraded but reporting clean again: keeps an open verdict it was part of, never starts or joins one), clean, guarded (degraded only by lock loss while its whole frame is unlocked), stale (no recent report) or missing (no input on this side for the channel).
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.a.since`*::
++
+--
+When the side's degradation began.
+
+
+type: date
+
+--
+
+*`tropobeat.correlation.sides.a.conditions`*::
++
+--
+Anomalies across the side's fresh inputs.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.a.instance_ids`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.a.signatures`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.a.ber`*::
++
+--
+Highest BER across the side's fresh inputs.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation.sides.a.mer_db`*::
++
+--
+Lowest MER across the side's fresh inputs, dB.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.a.power_dbm`*::
++
+--
+Lowest power across the side's fresh inputs, dBm.
+
+
+type: integer
+
+--
+
+[float]
+=== instances
+
+Every input on this side for the channel.
+
+
+
+*`tropobeat.correlation.sides.a.instances.id`*::
++
+--
+Demod input, "<host ip>/<slot>/<input>".
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.a.instances.host_ip`*::
++
+--
+type: ip
+
+--
+
+*`tropobeat.correlation.sides.a.instances.slot`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.a.instances.input`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.a.instances.side`*::
++
+--
+Demod side reported, A or B (empty when the input reports none).
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.a.instances.card_label`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.a.instances.frame_label`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.a.instances.report_time`*::
++
+--
+Timestamp of the input's latest report.
+
+
+type: date
+
+--
+
+*`tropobeat.correlation.sides.a.instances.fresh`*::
++
+--
+Whether the latest report is recent enough (correlator.stale_after) to count.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation.sides.a.instances.locked`*::
++
+--
+type: boolean
+
+--
+
+*`tropobeat.correlation.sides.a.instances.ber`*::
++
+--
+Latest Pre-FEC BER.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation.sides.a.instances.mer_db`*::
++
+--
+Latest MER, dB.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.a.instances.power_dbm`*::
++
+--
+Latest input power, dBm.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.a.instances.ber_effective`*::
++
+--
+The baseline BER a spike is measured against.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation.sides.a.instances.ber_threshold`*::
++
+--
+BER at or above which a report is a spike: correlator.ber_factor x ber_effective.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation.sides.a.instances.mer_median_db`*::
++
+--
+Baseline median MER, dB.
+
+
+type: float
+
+--
+
+*`tropobeat.correlation.sides.a.instances.mer_threshold_db`*::
++
+--
+MER at or below which a report is a drop: the median minus correlator.mer_drop_db.
+
+
+type: float
+
+--
+
+*`tropobeat.correlation.sides.a.instances.conditions`*::
++
+--
+Anomalies on the latest report: ber_spike, ber_saturated, mer_drop, lock_lost.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.a.instances.degraded`*::
++
+--
+Anomalous for correlator.hysteresis_cycles reports in a row, and not yet clean for as many.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation.sides.a.instances.stressed`*::
++
+--
+Environmentally Stressed: a BER spike held for correlator.hysteresis_cycles reports while locked.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation.sides.a.instances.bad`*::
++
+--
+Consecutive anomalous reports.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.a.instances.good`*::
++
+--
+Consecutive clean reports.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.a.instances.signature`*::
++
+--
+For a degraded input: steady_or_rising (power held, typical of interference), dropping (power fell by correlator.power_drop_db or more: a fade, feed or transmitter problem) or unlocked.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.a.instances.power_delta_db`*::
++
+--
+Power now minus the median of its clean readings before the degradation began, dB.
+
+
+type: float
+
+--
+
+[float]
+=== b
+
+Side B of the pair.
+
+
+
+*`tropobeat.correlation.sides.b.view`*::
++
+--
+degraded, recovering (still degraded but reporting clean again: keeps an open verdict it was part of, never starts or joins one), clean, guarded (degraded only by lock loss while its whole frame is unlocked), stale (no recent report) or missing (no input on this side for the channel).
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.b.since`*::
++
+--
+When the side's degradation began.
+
+
+type: date
+
+--
+
+*`tropobeat.correlation.sides.b.conditions`*::
++
+--
+Anomalies across the side's fresh inputs.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.b.instance_ids`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.b.signatures`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.b.ber`*::
++
+--
+Highest BER across the side's fresh inputs.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation.sides.b.mer_db`*::
++
+--
+Lowest MER across the side's fresh inputs, dB.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.b.power_dbm`*::
++
+--
+Lowest power across the side's fresh inputs, dBm.
+
+
+type: integer
+
+--
+
+[float]
+=== instances
+
+Every input on this side for the channel.
+
+
+
+*`tropobeat.correlation.sides.b.instances.id`*::
++
+--
+Demod input, "<host ip>/<slot>/<input>".
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.b.instances.host_ip`*::
++
+--
+type: ip
+
+--
+
+*`tropobeat.correlation.sides.b.instances.slot`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.b.instances.input`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.b.instances.side`*::
++
+--
+Demod side reported, A or B (empty when the input reports none).
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.b.instances.card_label`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.b.instances.frame_label`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.b.instances.report_time`*::
++
+--
+Timestamp of the input's latest report.
+
+
+type: date
+
+--
+
+*`tropobeat.correlation.sides.b.instances.fresh`*::
++
+--
+Whether the latest report is recent enough (correlator.stale_after) to count.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation.sides.b.instances.locked`*::
++
+--
+type: boolean
+
+--
+
+*`tropobeat.correlation.sides.b.instances.ber`*::
++
+--
+Latest Pre-FEC BER.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation.sides.b.instances.mer_db`*::
++
+--
+Latest MER, dB.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.b.instances.power_dbm`*::
++
+--
+Latest input power, dBm.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.b.instances.ber_effective`*::
++
+--
+The baseline BER a spike is measured against.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation.sides.b.instances.ber_threshold`*::
++
+--
+BER at or above which a report is a spike: correlator.ber_factor x ber_effective.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation.sides.b.instances.mer_median_db`*::
++
+--
+Baseline median MER, dB.
+
+
+type: float
+
+--
+
+*`tropobeat.correlation.sides.b.instances.mer_threshold_db`*::
++
+--
+MER at or below which a report is a drop: the median minus correlator.mer_drop_db.
+
+
+type: float
+
+--
+
+*`tropobeat.correlation.sides.b.instances.conditions`*::
++
+--
+Anomalies on the latest report: ber_spike, ber_saturated, mer_drop, lock_lost.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.b.instances.degraded`*::
++
+--
+Anomalous for correlator.hysteresis_cycles reports in a row, and not yet clean for as many.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation.sides.b.instances.stressed`*::
++
+--
+Environmentally Stressed: a BER spike held for correlator.hysteresis_cycles reports while locked.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation.sides.b.instances.bad`*::
++
+--
+Consecutive anomalous reports.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.b.instances.good`*::
++
+--
+Consecutive clean reports.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation.sides.b.instances.signature`*::
++
+--
+For a degraded input: steady_or_rising (power held, typical of interference), dropping (power fell by correlator.power_drop_db or more: a fade, feed or transmitter problem) or unlocked.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.sides.b.instances.power_delta_db`*::
++
+--
+Power now minus the median of its clean readings before the degradation began, dB.
+
+
+type: float
+
+--
+
+[float]
+=== ducting
+
+The ducting on the co-channel paths of the channel, as looked up for the decision.
+
+
+
+*`tropobeat.correlation.ducting.status`*::
++
+--
+fresh, stale (the last weather poll is older than 2 x period) or no_poll.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.ducting.polled_at`*::
++
+--
+When the ducting results were computed (weather poll time).
+
+
+type: date
+
+--
+
+*`tropobeat.correlation.ducting.forecast_time`*::
++
+--
+The hour the weather applies to.
+
+
+type: date
+
+--
+
+*`tropobeat.correlation.ducting.paths_on_channel`*::
++
+--
+Co-channel paths on the LRF and channel.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation.ducting.paths_unknown`*::
++
+--
+Of those, paths with no usable weather (an incomplete fetch): their ducting is unknown.
+
+
+type: integer
+
+--
+
+[float]
+=== strongest
+
+The co-channel path with the highest ducting state, the nearest winning a tie.
+
+
+
+*`tropobeat.correlation.ducting.strongest.path_id`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation.ducting.strongest.call_sign`*::
++
+--
+The likely interfering transmitter.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.ducting.strongest.facility_id`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation.ducting.strongest.distance_mi`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.correlation.ducting.strongest.state`*::
++
+--
+normal, super_refractive, ducting or trapping.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.ducting.strongest.level`*::
++
+--
+The state as 0 (normal) to 3 (trapping).
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation.ducting.strongest.ducting_points`*::
++
+--
+Points of the path with dM/dh < 0: lrf, midpoint, transmitter.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.ducting.active_path_ids`*::
++
+--
+Paths on the channel that are ducting or trapping.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.ducting.active_call_signs`*::
++
+--
+Their transmitters.
+
+
+type: keyword
+
+--
+
+[float]
+=== tropobeat.correlation_trace
+
+A decision-trace record of the correlation engine: how it judged a report, an input, a pair or the ducting, and why. Categories are enabled with correlator.trace.categories.
+
+
+
+*`tropobeat.correlation_trace.category`*::
++
+--
+input, skip, hysteresis, pair, ducting or sweep (correlator.trace.categories).
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.reason`*::
++
+--
+Short code of what was decided. See CORRELATION.md for every code.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.decision`*::
++
+--
+hit (an anomaly or CCI found), miss (not found) or skip (not judged, or a verdict waiting for correlator.pair_grace).
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.message`*::
++
+--
+One-line explanation.
+
+
+type: text
+
+--
+
+*`tropobeat.correlation_trace.episode_id`*::
++
+--
+The episode the record belongs to, as tropobeat.correlation.episode.id.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.state`*::
++
+--
+For pair records: the pair state after the decision.
+
+
+type: keyword
+
+--
+
+
+*`tropobeat.correlation_trace.lrf.location`*::
++
+--
+LRF location, when the code is in the LRF list.
+
+
+type: geo_point
+
+--
+
+[float]
+=== input
+
+For input, skip and hysteresis records: the input and its reading.
+
+
+
+*`tropobeat.correlation_trace.input.id`*::
++
+--
+Demod input, "<host ip>/<slot>/<input>".
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.input.host_ip`*::
++
+--
+type: ip
+
+--
+
+*`tropobeat.correlation_trace.input.slot`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.input.input`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.input.side`*::
++
+--
+Demod side reported, A or B (empty when the input reports none).
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.input.card_label`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.input.frame_label`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.input.report_time`*::
++
+--
+Timestamp of the input's latest report.
+
+
+type: date
+
+--
+
+*`tropobeat.correlation_trace.input.fresh`*::
++
+--
+Whether the latest report is recent enough (correlator.stale_after) to count.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation_trace.input.locked`*::
++
+--
+type: boolean
+
+--
+
+*`tropobeat.correlation_trace.input.ber`*::
++
+--
+Latest Pre-FEC BER.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation_trace.input.mer_db`*::
++
+--
+Latest MER, dB.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.input.power_dbm`*::
++
+--
+Latest input power, dBm.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.input.ber_effective`*::
++
+--
+The baseline BER a spike is measured against.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation_trace.input.ber_threshold`*::
++
+--
+BER at or above which a report is a spike: correlator.ber_factor x ber_effective.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation_trace.input.mer_median_db`*::
++
+--
+Baseline median MER, dB.
+
+
+type: float
+
+--
+
+*`tropobeat.correlation_trace.input.mer_threshold_db`*::
++
+--
+MER at or below which a report is a drop: the median minus correlator.mer_drop_db.
+
+
+type: float
+
+--
+
+*`tropobeat.correlation_trace.input.conditions`*::
++
+--
+Anomalies on the latest report: ber_spike, ber_saturated, mer_drop, lock_lost.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.input.degraded`*::
++
+--
+Anomalous for correlator.hysteresis_cycles reports in a row, and not yet clean for as many.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation_trace.input.stressed`*::
++
+--
+Environmentally Stressed: a BER spike held for correlator.hysteresis_cycles reports while locked.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation_trace.input.bad`*::
++
+--
+Consecutive anomalous reports.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.input.good`*::
++
+--
+Consecutive clean reports.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.input.signature`*::
++
+--
+For a degraded input: steady_or_rising (power held, typical of interference), dropping (power fell by correlator.power_drop_db or more: a fade, feed or transmitter problem) or unlocked.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.input.power_delta_db`*::
++
+--
+Power now minus the median of its clean readings before the degradation began, dB.
+
+
+type: float
+
+--
+
+
+[float]
+=== a
+
+Side A of the pair.
+
+
+
+*`tropobeat.correlation_trace.sides.a.view`*::
++
+--
+degraded, recovering (still degraded but reporting clean again: keeps an open verdict it was part of, never starts or joins one), clean, guarded (degraded only by lock loss while its whole frame is unlocked), stale (no recent report) or missing (no input on this side for the channel).
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.a.since`*::
++
+--
+When the side's degradation began.
+
+
+type: date
+
+--
+
+*`tropobeat.correlation_trace.sides.a.conditions`*::
++
+--
+Anomalies across the side's fresh inputs.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instance_ids`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.a.signatures`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.a.ber`*::
++
+--
+Highest BER across the side's fresh inputs.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation_trace.sides.a.mer_db`*::
++
+--
+Lowest MER across the side's fresh inputs, dB.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.a.power_dbm`*::
++
+--
+Lowest power across the side's fresh inputs, dBm.
+
+
+type: integer
+
+--
+
+[float]
+=== instances
+
+Every input on this side for the channel.
+
+
+
+*`tropobeat.correlation_trace.sides.a.instances.id`*::
++
+--
+Demod input, "<host ip>/<slot>/<input>".
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.host_ip`*::
++
+--
+type: ip
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.slot`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.input`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.side`*::
++
+--
+Demod side reported, A or B (empty when the input reports none).
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.card_label`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.frame_label`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.report_time`*::
++
+--
+Timestamp of the input's latest report.
+
+
+type: date
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.fresh`*::
++
+--
+Whether the latest report is recent enough (correlator.stale_after) to count.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.locked`*::
++
+--
+type: boolean
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.ber`*::
++
+--
+Latest Pre-FEC BER.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.mer_db`*::
++
+--
+Latest MER, dB.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.power_dbm`*::
++
+--
+Latest input power, dBm.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.ber_effective`*::
++
+--
+The baseline BER a spike is measured against.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.ber_threshold`*::
++
+--
+BER at or above which a report is a spike: correlator.ber_factor x ber_effective.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.mer_median_db`*::
++
+--
+Baseline median MER, dB.
+
+
+type: float
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.mer_threshold_db`*::
++
+--
+MER at or below which a report is a drop: the median minus correlator.mer_drop_db.
+
+
+type: float
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.conditions`*::
++
+--
+Anomalies on the latest report: ber_spike, ber_saturated, mer_drop, lock_lost.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.degraded`*::
++
+--
+Anomalous for correlator.hysteresis_cycles reports in a row, and not yet clean for as many.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.stressed`*::
++
+--
+Environmentally Stressed: a BER spike held for correlator.hysteresis_cycles reports while locked.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.bad`*::
++
+--
+Consecutive anomalous reports.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.good`*::
++
+--
+Consecutive clean reports.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.signature`*::
++
+--
+For a degraded input: steady_or_rising (power held, typical of interference), dropping (power fell by correlator.power_drop_db or more: a fade, feed or transmitter problem) or unlocked.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.a.instances.power_delta_db`*::
++
+--
+Power now minus the median of its clean readings before the degradation began, dB.
+
+
+type: float
+
+--
+
+[float]
+=== b
+
+Side B of the pair.
+
+
+
+*`tropobeat.correlation_trace.sides.b.view`*::
++
+--
+degraded, recovering (still degraded but reporting clean again: keeps an open verdict it was part of, never starts or joins one), clean, guarded (degraded only by lock loss while its whole frame is unlocked), stale (no recent report) or missing (no input on this side for the channel).
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.b.since`*::
++
+--
+When the side's degradation began.
+
+
+type: date
+
+--
+
+*`tropobeat.correlation_trace.sides.b.conditions`*::
++
+--
+Anomalies across the side's fresh inputs.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instance_ids`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.b.signatures`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.b.ber`*::
++
+--
+Highest BER across the side's fresh inputs.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation_trace.sides.b.mer_db`*::
++
+--
+Lowest MER across the side's fresh inputs, dB.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.b.power_dbm`*::
++
+--
+Lowest power across the side's fresh inputs, dBm.
+
+
+type: integer
+
+--
+
+[float]
+=== instances
+
+Every input on this side for the channel.
+
+
+
+*`tropobeat.correlation_trace.sides.b.instances.id`*::
++
+--
+Demod input, "<host ip>/<slot>/<input>".
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.host_ip`*::
++
+--
+type: ip
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.slot`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.input`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.side`*::
++
+--
+Demod side reported, A or B (empty when the input reports none).
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.card_label`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.frame_label`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.report_time`*::
++
+--
+Timestamp of the input's latest report.
+
+
+type: date
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.fresh`*::
++
+--
+Whether the latest report is recent enough (correlator.stale_after) to count.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.locked`*::
++
+--
+type: boolean
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.ber`*::
++
+--
+Latest Pre-FEC BER.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.mer_db`*::
++
+--
+Latest MER, dB.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.power_dbm`*::
++
+--
+Latest input power, dBm.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.ber_effective`*::
++
+--
+The baseline BER a spike is measured against.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.ber_threshold`*::
++
+--
+BER at or above which a report is a spike: correlator.ber_factor x ber_effective.
+
+
+type: double
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.mer_median_db`*::
++
+--
+Baseline median MER, dB.
+
+
+type: float
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.mer_threshold_db`*::
++
+--
+MER at or below which a report is a drop: the median minus correlator.mer_drop_db.
+
+
+type: float
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.conditions`*::
++
+--
+Anomalies on the latest report: ber_spike, ber_saturated, mer_drop, lock_lost.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.degraded`*::
++
+--
+Anomalous for correlator.hysteresis_cycles reports in a row, and not yet clean for as many.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.stressed`*::
++
+--
+Environmentally Stressed: a BER spike held for correlator.hysteresis_cycles reports while locked.
+
+
+type: boolean
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.bad`*::
++
+--
+Consecutive anomalous reports.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.good`*::
++
+--
+Consecutive clean reports.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.signature`*::
++
+--
+For a degraded input: steady_or_rising (power held, typical of interference), dropping (power fell by correlator.power_drop_db or more: a fade, feed or transmitter problem) or unlocked.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.sides.b.instances.power_delta_db`*::
++
+--
+Power now minus the median of its clean readings before the degradation began, dB.
+
+
+type: float
+
+--
+
+[float]
+=== ducting
+
+The ducting on the co-channel paths of the channel, as looked up for the decision.
+
+
+
+*`tropobeat.correlation_trace.ducting.status`*::
++
+--
+fresh, stale (the last weather poll is older than 2 x period) or no_poll.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.ducting.polled_at`*::
++
+--
+When the ducting results were computed (weather poll time).
+
+
+type: date
+
+--
+
+*`tropobeat.correlation_trace.ducting.forecast_time`*::
++
+--
+The hour the weather applies to.
+
+
+type: date
+
+--
+
+*`tropobeat.correlation_trace.ducting.paths_on_channel`*::
++
+--
+Co-channel paths on the LRF and channel.
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.ducting.paths_unknown`*::
++
+--
+Of those, paths with no usable weather (an incomplete fetch): their ducting is unknown.
+
+
+type: integer
+
+--
+
+[float]
+=== strongest
+
+The co-channel path with the highest ducting state, the nearest winning a tie.
+
+
+
+*`tropobeat.correlation_trace.ducting.strongest.path_id`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.ducting.strongest.call_sign`*::
++
+--
+The likely interfering transmitter.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.ducting.strongest.facility_id`*::
++
+--
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.ducting.strongest.distance_mi`*::
++
+--
+type: float
+
+--
+
+*`tropobeat.correlation_trace.ducting.strongest.state`*::
++
+--
+normal, super_refractive, ducting or trapping.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.ducting.strongest.level`*::
++
+--
+The state as 0 (normal) to 3 (trapping).
+
+
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.ducting.strongest.ducting_points`*::
++
+--
+Points of the path with dM/dh < 0: lrf, midpoint, transmitter.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.ducting.active_path_ids`*::
++
+--
+Paths on the channel that are ducting or trapping.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.ducting.active_call_signs`*::
++
+--
+Their transmitters.
+
+
+type: keyword
+
+--
+
+
+*`tropobeat.correlation_trace.sweep.instances`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sweep.expired`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sweep.pairs`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sweep.not_clear`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sweep.reevaluated`*::
++
+--
+type: integer
+
+--
+
+*`tropobeat.correlation_trace.sweep.trace_dropped`*::
++
+--
+Trace records dropped since start.
+
+
+type: long
 
 --
 

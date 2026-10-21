@@ -1,20 +1,22 @@
 # Tropobeat dashboards
 
-Tropobeat ships two Kibana dashboards:
+Tropobeat ships three Kibana dashboards:
 
 - **[Tropobeat] Ducting Watch** shows tropobeat's ducting results. One LRF selector drives every panel: headline figures, a map of the paths that are ducting, heat maps of the network and of each path over the last 72 hours, where along a path the ducting is, and the duct detail behind it.
 - **[Tropobeat] Co-channel paths** checks that co-channel discovery has run. It puts every co-channel path, midpoint and transmitter from the latest discovery run on one map, together with every LRF.
+- **[Tropobeat] Correlation debug** shows how the correlation engine reached its verdicts: the latest verdict per LRF and channel, verdicts over time, the decision-trace reasons, each A/B pair decision with its explanation, MER and BER against their thresholds, and every trace record.
 
-What the states, scores and thresholds mean is in [DUCTING.md](DUCTING.md). Ducting Watch repeats the essentials in its **Ducting reference** panel.
+What the states, scores and thresholds mean is in [DUCTING.md](DUCTING.md); the correlation verdicts and trace reasons are in [CORRELATION.md](CORRELATION.md). Ducting Watch repeats the essentials in its **Ducting reference** panel.
 
 ## Contents
 
 1. [Installing](#1-installing)
 2. [Ducting Watch](#2-ducting-watch)
 3. [Co-channel paths](#3-co-channel-paths)
-4. [Colours](#4-colours)
-5. [Limitations](#5-limitations)
-6. [Changing the dashboards](#6-changing-the-dashboards)
+4. [Correlation debug](#4-correlation-debug)
+5. [Colours](#5-colours)
+6. [Limitations](#6-limitations)
+7. [Changing the dashboards](#7-changing-the-dashboards)
 
 ---
 
@@ -35,6 +37,9 @@ There are two ways to install the dashboards. Both create the same objects:
 | Markdown panel **[Tropobeat] Ducting reference** | `tropobeat-ducting-reference` |
 | Dashboard **[Tropobeat] Co-channel paths** | `tropobeat-cochannel-paths` |
 | Map **[Tropobeat] Co-channel paths map** | `tropobeat-cochannel-paths-map` |
+| Dashboard **[Tropobeat] Correlation debug** | `tropobeat-correlation-debug` |
+| Markdown panel **[Tropobeat] Correlation reference** | `tropobeat-correlation-reference` |
+| Saved search **[Tropobeat] Correlation trace** | `tropobeat-correlation-trace` |
 | Data view `tropobeat-*` | `tropobeat-*` |
 | Data view **LRF sites (tropobeat)** on `lrf-coordinates` | `tropobeat-lrf-coordinates` |
 
@@ -52,9 +57,9 @@ Installed packages carry the dashboards in tropobeat's `kibana` directory, where
   -E setup.dashboards.directory=_meta/kibana
 ```
 
-Add `-E setup.kibana.space.id=<space>` to load into a Kibana space other than the default. Loading again replaces the objects, so any changes made in Kibana are lost (see [Changing the dashboards](#6-changing-the-dashboards)). Setup also creates the `tropobeat-*` data view with every tropobeat field.
+Add `-E setup.kibana.space.id=<space>` to load into a Kibana space other than the default. Loading again replaces the objects, so any changes made in Kibana are lost (see [Changing the dashboards](#7-changing-the-dashboards)). Setup also creates the `tropobeat-*` data view with every tropobeat field.
 
-**By hand.** In Kibana, go to **Stack Management › Saved objects › Import** and choose `_meta/kibana/ducting-watch.ndjson` or `_meta/kibana/cochannel-paths.ndjson`. Each file holds one dashboard and everything it uses, including a minimal `tropobeat-*` data view; Kibana reads the fields from the index.
+**By hand.** In Kibana, go to **Stack Management › Saved objects › Import** and choose `_meta/kibana/ducting-watch.ndjson`, `_meta/kibana/cochannel-paths.ndjson` or `_meta/kibana/correlation-debug.ndjson`. Each file holds one dashboard and everything it uses, including a minimal `tropobeat-*` data view; Kibana reads the fields from the index.
 
 ## 2. Ducting Watch
 
@@ -105,7 +110,36 @@ One map of the **latest discovery run** in the time range (the last 7 days by de
 
 The **LRF** picker narrows the paths, midpoints, transmitters and white squares. **All LRFs** always shows every site, for context.
 
-## 4. Colours
+## 4. Correlation debug
+
+For checking and explaining the correlation engine: why a channel was or wasn't reported as co-channel interference. It reads the `correlation` verdict events and the `correlation_trace` decision-trace records ([CORRELATION.md](CORRELATION.md#10-tracing-a-decision)). It opens on the last hour and refreshes every 30 seconds.
+
+**Controls:** LRF, RF channel, trace category and trace reason. Pick an LRF and channel to follow one A/B pair through every panel.
+
+### Panels
+
+| Panel | Shows |
+|---|---|
+| **Verdicts: latest event per LRF and channel** | The current verdict of every LRF and channel that has had one, worst first: the event kind, the reason, the strength (ducting or trapping), the likely interfering transmitter and its distance, each side's view, and how long the episode has lasted. |
+| **Correlation reference** | The verdicts, the trace categories and decisions, and where to look when a channel didn't alert. |
+| **Verdict per LRF and channel** | A heat map of each LRF and channel's verdict over time, minute by minute, from 0 (clear) to 5 (cci_confirmed). Shows when episodes started, how long they lasted and how they changed. |
+| **Decision trace: reasons over time** | Trace records per minute, stacked by reason. A burst of one reason (for example `other_side_stale`) points straight at the cause. |
+| **Verdict events by verdict** | Verdict events per minute, by verdict (start, update, ongoing and clear events together). |
+| **Pair decisions: latest per LRF and channel** | The latest A/B decision for each LRF and channel: decision, reason, verdict, each side's view and anomalies, the strongest path, and the one-line explanation. |
+| **MER vs threshold by side** | The MER of each side against its drop threshold. Needs the `input` trace category. Pick one LRF and channel. |
+| **Pre-FEC BER vs spike threshold by side** | The same for BER, on a log scale. |
+| **Trace records** | The newest 500 trace records with their explanations. |
+| **Trace records in Discover** | The **[Tropobeat] Correlation trace** saved search, for sorting, filtering and opening records in Discover. |
+
+### Using it
+
+- **A channel didn't alert.** Pick its LRF and channel. **Pair decisions** gives the reason in words. If there's no pair record at all, neither input stayed anomalous for 3 reports in a row. Turn on the `input` category for that LRF (`correlator.trace.lrf_sites`) and read the **MER** and **BER** panels against their thresholds.
+- **A channel did alert.** Its **Verdicts** row names the likely interferer; the matching **Pair decisions** and **Trace records** show both sides' readings and the path that confirmed it. Every record of one episode shares its episode ID.
+- **Is the correlator seeing everything?** Set the category control to `skip` (inputs that can't be judged) or `sweep` (inputs live, pairs not clear, trace records dropped). Both need those categories turned on.
+
+The MER and BER panels and the `skip`, `ducting` and `sweep` records need their trace categories enabled; by default only `pair` and `hysteresis` are traced.
+
+## 5. Colours
 
 | Level | State | Heat maps | Table cells |
 |---|---|---|---|
@@ -118,7 +152,7 @@ In the Ducting Watch table, the LRF, midpoint and transmitter score cells are co
 
 The 0.6 boundary in the table colours, the chart's reference line and the **Ducting reference** panel follow tropobeat's score bands. Update them if the bands are recalibrated ([rolling plan](ROLLING_PLAN.md#4-open-questions), Q16).
 
-## 5. Limitations
+## 6. Limitations
 
 - **The network heat map needs `lrf-coordinates` in lookup mode.** Otherwise the panel shows an error. `tropobeat insert lrfcoordinates` creates it that way; an older index needs `--recreate` once.
 - **The network heat map can't pick an LRF by clicking**, because its labels are built in the query and aren't a field. Use the **LRF** control. The path heat map can still pick a path by clicking.
@@ -126,15 +160,16 @@ The 0.6 boundary in the table colours, the chart's reference line and the **Duct
 - **Index names.** Many panels and map layers are ES|QL queries that read `FROM tropobeat-*` or join `lrf-coordinates`. If those names change, edit the queries as well as the data views.
 - **Map layers draw up to 10,000 rows.** On the Co-channel paths map with every LRF in view, the full network may exceed that; pick an LRF.
 - **Time range and polling.** Ducting Watch opens on the last 2 hours. With hourly polls, a shorter range can briefly hold no poll, and the latest-poll panels go blank.
-- **MER and BER** at the LRF are not shown yet. They follow with the telemetry evaluation in Phase 4b.
+- **MER and BER on Ducting Watch** are not shown yet; the Correlation debug dashboard shows them from the decision trace.
+- **Correlation debug panels** query `tropobeat-*` with ES|QL, like Ducting Watch. The verdict heat map buckets by minute, so on a time range of many hours it gets dense; narrow the range or pick an LRF.
 
-## 6. Changing the dashboards
+## 7. Changing the dashboards
 
 The repository holds the dashboards as Kibana saved objects under `_meta/kibana/7/` (one file per object, which `tropobeat setup` reads) and as one bundle per dashboard in `_meta/kibana/*.ndjson`. To change one:
 
 1. Edit and save the dashboard in Kibana.
 2. **Stack Management › Saved objects:** select the dashboard and **Export** with **Include related objects**.
-3. Replace the matching files in `_meta/kibana/7/` (`dashboard/`, `map/`, `visualization/`, `index-pattern/`) and its `.ndjson` bundle with the exported objects. Keep the IDs above. References to the tropobeat data view must stay `tropobeat-*`, the data view that setup creates.
+3. Replace the matching files in `_meta/kibana/7/` (`dashboard/`, `map/`, `visualization/`, `search/`, `index-pattern/`) and its `.ndjson` bundle with the exported objects. Keep the IDs above. References to the tropobeat data view must stay `tropobeat-*`, the data view that setup creates.
 4. Run `make update` (or copy `_meta/kibana` into `_meta/kibana.generated`), which is what packages install.
 
 Kibana remembers unsaved edits in the browser, per dashboard, and shows them over the saved version. After reloading a dashboard from the repository, use **Reset** if Kibana says it has unsaved changes.

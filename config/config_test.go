@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/elastic/elastic-agent-libs/config"
+
+	"github.com/thetherington/tropobeat/internal/correlator"
 )
 
 func TestUnpackOpenMeteo(t *testing.T) {
@@ -272,5 +274,52 @@ baseline:
 	c := DefaultConfig
 	if err := raw.Unpack(&c); err == nil {
 		t.Error("window_days: 0 accepted")
+	}
+}
+
+func TestUnpackCorrelator(t *testing.T) {
+	// The defaults: tracing pair decisions and hysteresis transitions.
+	c := DefaultConfig
+	if got := c.Correlator.Trace.Categories; !slices.Equal(got, correlator.CategoryList{"pair", "hysteresis"}) {
+		t.Fatalf("default trace categories = %v", got)
+	}
+
+	raw, err := config.NewConfigFrom(`
+correlator:
+  ber_factor: 20
+  pair_grace: 30s
+  trace:
+    categories: [input]
+    lrf_sites: [TERH]
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Unpack(&c); err != nil {
+		t.Fatal(err)
+	}
+	k := c.Correlator
+	if k.BERFactor != 20 || k.PairGrace != 30*time.Second || k.MERDropDB != 3 || k.HysteresisCycles != 3 || !k.Enabled || !k.Publish {
+		t.Errorf("correlator = %+v", k)
+	}
+	// A configured list replaces the default list rather than merging into
+	// it element by element.
+	if !slices.Equal(k.Trace.Categories, correlator.CategoryList{"input"}) || !slices.Equal(k.Trace.LRFSites, []string{"TERH"}) {
+		t.Errorf("trace = %+v", k.Trace)
+	}
+
+	none, _ := config.NewConfigFrom(`correlator.trace.categories: []`)
+	c = DefaultConfig
+	if err := none.Unpack(&c); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Correlator.Trace.Categories) != 0 {
+		t.Errorf("an empty list should turn tracing off, got %v", c.Correlator.Trace.Categories)
+	}
+
+	bad, _ := config.NewConfigFrom(`correlator.trace.categories: [pairs]`)
+	c = DefaultConfig
+	if err := bad.Unpack(&c); err == nil {
+		t.Error("an unknown trace category should be rejected")
 	}
 }

@@ -16,6 +16,7 @@ import (
 
 	tropoCfg "github.com/thetherington/tropobeat/config"
 	"github.com/thetherington/tropobeat/internal/cochannel"
+	"github.com/thetherington/tropobeat/internal/correlator"
 	"github.com/thetherington/tropobeat/internal/demod"
 	"github.com/thetherington/tropobeat/internal/ducting"
 	"github.com/thetherington/tropobeat/internal/lrf"
@@ -233,27 +234,29 @@ func TestBaselineEvent(t *testing.T) {
 	}
 	site := &lrf.LRF{Code: "TERH", Latitude: 39.465533, Longitude: -87.4023442}
 	paths := []cochannel.Path{testPath()}
-	f := baselineEvent(b, site, paths, "disc1", "run1", at).Fields
+	f := baselineEvent(b, site, paths, "disc1", "run1", at, correlator.DefaultConfig).Fields
 	for k, want := range map[string]any{
-		"metricset.name":                      "baseline",
-		"tropobeat.baseline.run_id":           "run1",
-		"tropobeat.baseline.instance.id":      "10.91.10.1/9/1",
-		"tropobeat.baseline.instance.host_ip": "10.91.10.1",
-		"tropobeat.baseline.instance.slot":    9,
-		"tropobeat.baseline.lrf.location.lat": 39.465533,
-		"tropobeat.baseline.demod_side":       "A",
-		"tropobeat.discovery_run_id":          "disc1",
-		"tropobeat.baseline.status":           "ok",
-		"tropobeat.baseline.samples":          9884,
-		"tropobeat.baseline.window.days":      3.5,
-		"tropobeat.baseline.ber.median":       0.0,
-		"tropobeat.baseline.ber.effective":    1e-6,
-		"tropobeat.baseline.mer.median_db":    33.0,
-		"tropobeat.baseline.frame_label":      "Terre Haute, IN - A",
-		"tropobeat.baseline.card_label":       "TERH - Demod Card 1 - A",
-		"tropobeat.baseline.instance.input":   1,
-		"tropobeat.baseline.window.start":     b.From,
-		"tropobeat.baseline.lrf.location.lon": -87.4023442,
+		"metricset.name":                           "baseline",
+		"tropobeat.baseline.run_id":                "run1",
+		"tropobeat.baseline.instance.id":           "10.91.10.1/9/1",
+		"tropobeat.baseline.instance.host_ip":      "10.91.10.1",
+		"tropobeat.baseline.instance.slot":         9,
+		"tropobeat.baseline.lrf.location.lat":      39.465533,
+		"tropobeat.baseline.demod_side":            "A",
+		"tropobeat.discovery_run_id":               "disc1",
+		"tropobeat.baseline.status":                "ok",
+		"tropobeat.baseline.samples":               9884,
+		"tropobeat.baseline.window.days":           3.5,
+		"tropobeat.baseline.ber.median":            0.0,
+		"tropobeat.baseline.ber.effective":         1e-6,
+		"tropobeat.baseline.mer.median_db":         33.0,
+		"tropobeat.baseline.ber.spike_threshold":   correlator.DefaultConfig.BERFactor * b.EffectiveBER,
+		"tropobeat.baseline.mer.drop_threshold_db": 30.0,
+		"tropobeat.baseline.frame_label":           "Terre Haute, IN - A",
+		"tropobeat.baseline.card_label":            "TERH - Demod Card 1 - A",
+		"tropobeat.baseline.instance.input":        1,
+		"tropobeat.baseline.window.start":          b.From,
+		"tropobeat.baseline.lrf.location.lon":      -87.4023442,
 	} {
 		if got := get(t, f, k); got != want {
 			t.Errorf("%s = %v, want %v", k, got, want)
@@ -270,7 +273,7 @@ func TestBaselineEvent(t *testing.T) {
 
 	// An LRF not in the LRF list has no location. With no co-channel paths
 	// there are no path fields and no discovery run.
-	f = baselineEvent(b, nil, nil, "disc1", "run1", at).Fields
+	f = baselineEvent(b, nil, nil, "disc1", "run1", at, correlator.DefaultConfig).Fields
 	if _, err := f.GetValue("tropobeat.baseline.lrf.location"); err == nil {
 		t.Error("location set without an LRF site")
 	}

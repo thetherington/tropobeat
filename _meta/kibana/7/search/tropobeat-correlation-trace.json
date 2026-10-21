@@ -1,0 +1,41 @@
+{
+  "type": "search",
+  "id": "tropobeat-correlation-trace",
+  "managed": false,
+  "coreMigrationVersion": "8.8.0",
+  "typeMigrationVersion": "10.5.0",
+  "attributes": {
+    "title": "[Tropobeat] Correlation trace",
+    "description": "Decision-trace records of the tropobeat correlation engine.",
+    "columns": [
+      "tropobeat.correlation_trace.category",
+      "tropobeat.correlation_trace.decision",
+      "tropobeat.correlation_trace.reason",
+      "tropobeat.lrf_codes",
+      "tropobeat.rf_channels",
+      "tropobeat.correlation_trace.input.side",
+      "tropobeat.correlation_trace.message",
+      "tropobeat.correlation_trace.episode_id"
+    ],
+    "sort": [
+      [
+        "@timestamp",
+        "desc"
+      ]
+    ],
+    "grid": {},
+    "hideChart": false,
+    "isTextBasedQuery": false,
+    "timeRestore": false,
+    "kibanaSavedObjectMeta": {
+      "searchSourceJSON": "{\"query\": {\"query\": \"metricset.name : \\\"correlation_trace\\\"\", \"language\": \"kuery\"}, \"filter\": [], \"indexRefName\": \"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
+    }
+  },
+  "references": [
+    {
+      "id": "tropobeat-*",
+      "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
+      "type": "index-pattern"
+    }
+  ]
+}

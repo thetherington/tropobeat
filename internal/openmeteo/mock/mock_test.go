@@ -30,7 +30,13 @@ var sites = map[string]openmeteo.Coordinate{
 // Open-Meteo client and runs the ducting calculation on each.
 func analyse(t *testing.T, cfg Config, at time.Time, coords ...openmeteo.Coordinate) []ducting.Analysis {
 	t.Helper()
-	srv := httptest.NewServer(Handler(cfg, func() time.Time { return at }))
+	return analyseSites(t, cfg, nil, at, coords...)
+}
+
+// analyseSites is analyse with per-site scenario overrides.
+func analyseSites(t *testing.T, cfg Config, st *Sites, at time.Time, coords ...openmeteo.Coordinate) []ducting.Analysis {
+	t.Helper()
+	srv := httptest.NewServer(Handler(cfg, func() time.Time { return at }, st))
 	defer srv.Close()
 
 	client, err := openmeteo.New(openmeteo.Config{URL: srv.URL + "/v1/forecast", MaxRetries: 0})
@@ -210,7 +216,7 @@ func TestMixedDeterministic(t *testing.T) {
 }
 
 func TestResponseShape(t *testing.T) {
-	srv := httptest.NewServer(Handler(DefaultConfig, func() time.Time { return testNow }))
+	srv := httptest.NewServer(Handler(DefaultConfig, func() time.Time { return testNow }, nil))
 	defer srv.Close()
 
 	get := func(q string) (int, []byte) {
@@ -286,5 +292,79 @@ func TestConfigValidate(t *testing.T) {
 	}
 	if err := (Config{Scenario: ScenarioMixed}).Validate(); err == nil {
 		t.Error("zero cycle should be rejected")
+	}
+}
+
+func TestSiteOverrides(t *testing.T) {
+	cfg := DefaultConfig
+	cfg.Scenario = ScenarioNormal
+	cfg.Sites = map[string]string{"TERH": ScenarioTrapped}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	terh, bos := sites["TERH"], sites["BOS"]
+	st := &Sites{}
+	st.Set([]SitePoint{{Lat: terh.Lat, Lon: terh.Lon, Scenario: ScenarioTrapped}})
+
+	// A point a little off the override (as coordinate_precision rounding
+	// gives) still takes it; a distant LRF keeps the global scenario.
+	near := openmeteo.Coordinate{Lat: terh.Lat + 0.03, Lon: terh.Lon - 0.03}
+	got := analyseSites(t, cfg, st, testNow, near, bos)
+	if !traps(got[0], rf2MHz) {
+		t.Errorf("overridden site: class %s, want a duct trapping RF 2", got[0].Class)
+	}
+	if got[1].Class != ducting.Normal {
+		t.Errorf("other site: class %s, want normal", got[1].Class)
+	}
+
+	bad := cfg
+	bad.Sites = map[string]string{"TERH": "stormy"}
+	if err := bad.Validate(); err == nil {
+		t.Error("an unknown site scenario should be rejected")
+	}
+}
+
+func TestFailWindow(t *testing.T) {
+	cfg := DefaultConfig
+	cfg.FailEvery, cfg.FailFor = 40*time.Minute, 5*time.Minute
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	// Aligned to the clock: 14:00 starts a 40-minute window (14:00 is a
+	// multiple of 40 minutes since the epoch), so 14:02 fails and 14:20
+	// does not.
+	in, out := time.Date(2026, 10, 15, 14, 2, 0, 0, time.UTC), time.Date(2026, 10, 15, 14, 20, 0, 0, time.UTC)
+	for at, want := range map[time.Time]int{in: http.StatusServiceUnavailable, out: http.StatusOK} {
+		srv := httptest.NewServer(Handler(cfg, func() time.Time { return at }, nil))
+		resp, err := http.Get(srv.URL + "/v1/forecast?latitude=39.5&longitude=-87.4&hourly=temperature_2m")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		srv.Close()
+		if resp.StatusCode != want {
+			t.Errorf("at %s: status %d, want %d", at.Format("15:04"), resp.StatusCode, want)
+		}
+	}
+
+	bad := cfg
+	bad.FailFor = bad.FailEvery
+	if err := bad.Validate(); err == nil {
+		t.Error("fail_for as long as fail_every should be rejected")
+	}
+}
+
+func TestNoDataSite(t *testing.T) {
+	cfg := DefaultConfig
+	cfg.Scenario = ScenarioNormal
+	terh := sites["TERH"]
+	st := &Sites{}
+	st.Set([]SitePoint{{Lat: terh.Lat, Lon: terh.Lon, Scenario: ScenarioNoData}})
+	got := analyseSites(t, cfg, st, testNow, terh, sites["BOS"])
+	if got[0].Usable() {
+		t.Errorf("no_data site is usable (class %s)", got[0].Class)
+	}
+	if !got[1].Usable() {
+		t.Error("other site has no data")
 	}
 }

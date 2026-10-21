@@ -1,0 +1,59 @@
+# A 60-minute demonstration cycle of presentation-paced episodes, meant to
+# run unattended with -loop:
+#
+#   go run ./tools/demodreplay -declare -now -loop -quiet \
+#       -scenario tools/demodreplay/scenarios/demo.yml \
+#       sample/log-metric-p-rfdemod-2026.10.13.tar.gz
+#
+# Use the tropobeat settings in all-conditions.tropobeat.yml (TERH trapped,
+# PROV ducting, BOS normal).
+
+repeat_every: 60m
+
+steps:
+  # A 15-minute CCI episode with a trapping duct: start, ongoing events
+  # every 5 minutes, then clear. Interferer named from TERH's RF 31 paths.
+  - name: cci-trapping
+    lrf: TERH
+    rf: "31"
+    side: AB
+    start: 0s
+    duration: 15m
+    action: ber
+
+  # CCI with a thin duct (ducting, not trapping), seen as an MER drop.
+  - name: cci-ducting
+    lrf: PROV
+    rf: "24"
+    side: AB
+    start: 18m
+    duration: 10m
+    action: mer
+
+  # Both sides degraded but no ducting: a fade (power drops too).
+  - name: fade-not-cci
+    lrf: BOS
+    rf: "22"
+    side: AB
+    start: 30m
+    duration: 10m
+    action: fade
+    db: 8
+
+  # One demod only: an equipment fault, not the received signal.
+  - name: single-demod
+    lrf: PROV
+    rf: "25"
+    side: A
+    start: 42m
+    duration: 8m
+    action: ber
+
+  # A whole frame goes dark: not treated as CCI.
+  - name: frame-down
+    lrf: BOS
+    rf: "*"
+    side: A
+    start: 52m
+    duration: 6m
+    action: unlock

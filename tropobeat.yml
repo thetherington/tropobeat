@@ -301,3 +301,25 @@ processors:
 # This allows to enable 6.7 migration aliases
 #migration.6_to_7.enabled: true
 
+  # The correlation engine: judges each live demod report against its
+  # baseline, pairs the side A and B demods of each LRF and RF channel, and
+  # confirms co-channel interference (CCI) when both sides are degraded and
+  # a co-channel path on the channel is ducting. Runs only with rabbitmq
+  # enabled. See CORRELATION.md.
+  #correlator:
+    #enabled: true
+    # Publish verdicts as the correlation metricset.
+    #publish: true
+    # BER spike: BER at least ber_factor x the baseline's effective BER.
+    #ber_factor: 10
+    # MER drop: MER at least mer_drop_db below the baseline median.
+    #mer_drop_db: 3
+    # Reports in a row needed to become degraded, and to clear.
+    #hysteresis_cycles: 3
+    # Decision trace, published as the correlation_trace metricset:
+    # input, skip, hysteresis, pair, ducting, sweep. [] turns it off.
+    #trace:
+      #categories: [pair, hysteresis]
+      # Limit tracing to these LRF codes (empty = all). Use this with the
+      # input category, which records every report.
+      #lrf_sites: []

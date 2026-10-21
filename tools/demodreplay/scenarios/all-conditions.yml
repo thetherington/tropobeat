@@ -1,0 +1,174 @@
+# Every correlator condition, one LRF and channel each, in about 45 minutes
+# at real time. Run it with the matching tropobeat settings in
+# all-conditions.tropobeat.yml (mock weather per LRF, 1-minute polls, all
+# trace categories), and -quiet so only these injections show:
+#
+#   go run ./tools/demodreplay -declare -now -quiet \
+#       -scenario tools/demodreplay/scenarios/all-conditions.yml \
+#       sample/log-metric-p-rfdemod-2026.10.13.tar.gz
+#
+# Add -loop to keep it running; the scenario repeats every 50 minutes.
+#
+# The mock weather sets each LRF's ducting:
+#   TERH trapped   (a duct that traps every channel)  -> cci_confirmed, trapping
+#   PROV ducting   (a thin duct that traps nothing)    -> cci_confirmed, ducting
+#   BOS  normal                                        -> dual_unexplained
+#   IND  no_data   (no usable weather on its paths)    -> dual_ducting_unknown
+#
+# Channels with co-channel paths (test cluster, 2026-10-21): TERH 18, 23,
+# 31, 35; PROV 17, 24, 25; BOS 9, 11, 19-22, 29, 32-34; IND 16. Without
+# paths: TERH 10, PROV 2, BOS 5. Every channel used has an ok baseline on
+# both sides.
+#
+# A condition needs 3 reports (minutes) to make an input degraded and 3
+# clean ones to clear it, and a one-sided verdict waits 2 minutes
+# (correlator.pair_grace), so allow for that when reading the timeline.
+
+steps:
+  - name: cci-trapping
+    lrf: TERH
+    rf: "31"
+    side: AB
+    start: 1m
+    duration: 12m          # long enough for an ongoing event at 5 minutes
+    action: ber
+
+  - name: cci-ducting
+    lrf: PROV
+    rf: "24"
+    side: AB
+    start: 2m
+    duration: 6m
+    action: mer
+
+  - name: dual-unexplained-fade
+    lrf: BOS
+    rf: "22"
+    side: AB
+    start: 3m
+    duration: 6m
+    action: fade           # MER and power both drop: signature "dropping"
+    db: 8
+
+  - name: ducting-incomplete
+    lrf: IND
+    rf: "16"
+    side: AB
+    start: 4m
+    duration: 6m
+    action: ber
+
+  - name: single-side
+    lrf: PROV
+    rf: "25"
+    side: A
+    start: 10m
+    duration: 6m
+    action: ber
+
+  - name: dual-no-cochannel-paths
+    lrf: BOS
+    rf: "5"
+    side: AB
+    start: 10m
+    duration: 5m
+    action: ber
+
+  # Side A degraded while side B stops reporting: unpaired, other_side_stale.
+  - name: other-side-stale (A)
+    lrf: TERH
+    rf: "23"
+    side: A
+    start: 15m
+    duration: 6m
+    action: ber
+  - name: other-side-stale (B silent)
+    lrf: TERH
+    rf: "23"
+    side: B
+    start: 15m
+    duration: 6m
+    action: drop
+
+  # BOS side A's whole frame unlocks: the lock-loss guard keeps it from
+  # counting as CCI. Side B of RF 20 degrades meanwhile: unpaired,
+  # guard_frame_down.
+  - name: frame-down
+    lrf: BOS
+    rf: "*"
+    side: A
+    start: 17m
+    duration: 5m
+    action: unlock
+  - name: frame-down (other side degraded)
+    lrf: BOS
+    rf: "20"
+    side: B
+    start: 17m
+    duration: 5m
+    action: ber
+
+  - name: saturated-ber
+    lrf: PROV
+    rf: "17"
+    side: AB
+    start: 18m
+    duration: 5m
+    action: saturate
+
+  # One channel unlocks on both sides while the frames stay up: CCI through
+  # lock loss (TERH is trapping).
+  - name: lock-loss-cci
+    lrf: TERH
+    rf: "35"
+    side: AB
+    start: 22m
+    duration: 5m
+    action: unlock
+
+  - name: missing-side-label
+    lrf: PROV
+    rf: "2"
+    side: A
+    start: 26m
+    duration: 3m
+    action: noside
+
+  # Flapping: 2 bad / 2 good never reaches 3 in a row; 4 bad / 4 good
+  # enters, clears 4 minutes later, and the last 2 bad reports of the
+  # 10-minute step are too few to enter again.
+  - name: flap-never-enters
+    lrf: TERH
+    rf: "18"
+    side: AB
+    start: 28m
+    duration: 6m
+    action: flap
+    bad: 2
+    good: 2
+  - name: flap-enters-and-clears
+    lrf: TERH
+    rf: "18"
+    side: AB
+    start: 35m
+    duration: 10m
+    action: flap
+    bad: 4
+    good: 4
+
+  # Gaps: a 1-minute gap changes nothing; a 4-minute gap (over
+  # correlator.expire_after) expires the input and restarts its counters.
+  - name: short-gap
+    lrf: TERH
+    rf: "10"
+    side: A
+    start: 24m
+    duration: 1m
+    action: drop
+  - name: long-gap
+    lrf: TERH
+    rf: "10"
+    side: A
+    start: 30m
+    duration: 4m
+    action: drop

@@ -1,0 +1,30 @@
+# tropobeat.yml settings for scenarios/all-conditions.yml (and demo.yml).
+# Merge these into the tropobeat: section of tropobeat.yml; keep your own
+# elasticsearch, output and rabbitmq credentials.
+tropobeat:
+  # 1-minute weather polls, so ducting results are always fresh.
+  period: 1m
+  lrf_sites: ["TERH", "PROV", "BOS", "IND"]
+  openmeteo:
+    mock:
+      enabled: true
+      scenario: normal
+      # The ducting each scenario LRF sees (see all-conditions.yml).
+      sites:
+        TERH: trapped
+        PROV: ducting
+        BOS: normal
+        IND: no_data
+      # Optional: polls fail for 4 minutes every 50, so the ducting goes
+      # stale (dual_ducting_unknown, ducting_stale) while it lasts. This
+      # affects every LRF at once and is not lined up with the scenario.
+      #fail_every: 50m
+      #fail_for: 4m
+  rabbitmq:
+    enabled: true
+    host: localhost
+    exchange_declare: active
+    password: "${RABBITMQ_PASSWORD}"
+  correlator:
+    trace:
+      categories: [input, skip, hysteresis, pair, ducting, sweep]

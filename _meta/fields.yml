@@ -3,9 +3,11 @@
   description: >
     Fields published by tropobeat: co-channel paths (metricset cochannel), the
     weather along them (metricset weather), the ducting analysis of each
-    weather location (metricset ducting), and the 7-day baseline of each
-    demod instance (metricset baseline). See DUCTING.md for how ducting
-    results are calculated and read.
+    weather location (metricset ducting), the 7-day baseline of each
+    demod instance (metricset baseline), and the correlation engine's
+    verdicts (metricset correlation) and decision trace (metricset
+    correlation_trace). See DUCTING.md for how ducting results are
+    calculated and read, and CORRELATION.md for the correlation engine.
   fields:
     - name: metricset
       type: group
@@ -13,7 +15,8 @@
         - name: name
           type: keyword
           description: >
-            The kind of event: cochannel, weather, ducting or baseline.
+            The kind of event: cochannel, weather, ducting, baseline,
+            correlation or correlation_trace.
 
     # Fields shared by every metricset, directly under tropobeat, so one
     # dashboard filter or search works across all of them. Lists are always
@@ -381,9 +384,922 @@
               description: >
                 The BER a spike is measured against: the median, or
                 baseline.ber_floor when the median is lower (usually 0).
+            - name: spike_threshold
+              type: double
+              description: >
+                BER at or above which a live report is a spike:
+                correlator.ber_factor x effective. For reference.
         - name: mer
           type: group
           fields:
             - name: median_db
               type: float
               description: Median MER, dB.
+            - name: drop_threshold_db
+              type: float
+              description: >
+                MER at or below which a live report is a drop: the median
+                minus correlator.mer_drop_db. For reference.
+
+    - name: tropobeat.correlation
+      type: group
+      description: >
+        A verdict of the correlation engine for one LRF and RF channel (its
+        A/B pair): whether the degradation of the channel is co-channel
+        interference carried by a duct. Published when the verdict starts,
+        changes, clears, and every correlator.snapshot_interval while it is
+        not clear. See CORRELATION.md.
+      fields:
+        - name: kind
+          type: keyword
+          description: >
+            start (the pair left clear), update (the state or, while
+            cci_confirmed, the ducting evidence changed), ongoing
+            (re-published every correlator.snapshot_interval) or clear.
+        - name: state
+          type: keyword
+          description: >
+            clear, single_side, unpaired, dual_ducting_unknown,
+            dual_unexplained or cci_confirmed. See CORRELATION.md.
+        - name: previous_state
+          type: keyword
+        - name: severity
+          type: integer
+          description: >
+            The state as 0 (clear) to 5 (cci_confirmed).
+        - name: reason
+          type: keyword
+          description: >
+            The rule that decided the state.
+        - name: strength
+          type: keyword
+          description: >
+            For cci_confirmed: ducting or trapping, from the strongest path.
+        - name: episode
+          type: group
+          fields:
+            - name: id
+              type: keyword
+              description: >
+                "<lrf>:<rf channel>:<start>"; shared by every event and trace
+                record of one episode.
+            - name: start
+              type: date
+            - name: duration_s
+              type: float
+              description: >
+                Seconds since the episode started.
+            - name: peak_state
+              type: keyword
+              description: >
+                Most severe state reached in the episode.
+        - name: lrf
+          type: group
+          fields:
+            - name: location
+              type: geo_point
+              description: >
+                LRF location, when the code is in the LRF list.
+        - name: sides
+          type: group
+          fields:
+            - name: a
+              type: group
+              description: >
+                Side A of the pair.
+              fields:
+                - name: view
+                  type: keyword
+                  description: >
+                    degraded, recovering (still degraded but reporting clean again:
+                    keeps an open verdict it was part of, never starts or joins one), clean, guarded (degraded
+                    only by lock loss while
+                    its whole frame is unlocked), stale (no recent report) or
+                    missing (no input on this side for the channel).
+                - name: since
+                  type: date
+                  description: >
+                    When the side's degradation began.
+                - name: conditions
+                  type: keyword
+                  description: >
+                    Anomalies across the side's fresh inputs.
+                - name: instance_ids
+                  type: keyword
+                - name: signatures
+                  type: keyword
+                - name: ber
+                  type: double
+                  description: >
+                    Highest BER across the side's fresh inputs.
+                - name: mer_db
+                  type: integer
+                  description: >
+                    Lowest MER across the side's fresh inputs, dB.
+                - name: power_dbm
+                  type: integer
+                  description: >
+                    Lowest power across the side's fresh inputs, dBm.
+                - name: instances
+                  type: group
+                  description: >
+                    Every input on this side for the channel.
+                  fields:
+                    - name: id
+                      type: keyword
+                      description: >
+                        Demod input, "<host ip>/<slot>/<input>".
+                    - name: host_ip
+                      type: ip
+                    - name: slot
+                      type: integer
+                    - name: input
+                      type: integer
+                    - name: side
+                      type: keyword
+                      description: >
+                        Demod side reported, A or B (empty when the input
+                        reports none).
+                    - name: card_label
+                      type: keyword
+                    - name: frame_label
+                      type: keyword
+                    - name: report_time
+                      type: date
+                      description: >
+                        Timestamp of the input's latest report.
+                    - name: fresh
+                      type: boolean
+                      description: >
+                        Whether the latest report is recent enough
+                        (correlator.stale_after) to count.
+                    - name: locked
+                      type: boolean
+                    - name: ber
+                      type: double
+                      description: >
+                        Latest Pre-FEC BER.
+                    - name: mer_db
+                      type: integer
+                      description: >
+                        Latest MER, dB.
+                    - name: power_dbm
+                      type: integer
+                      description: >
+                        Latest input power, dBm.
+                    - name: ber_effective
+                      type: double
+                      description: >
+                        The baseline BER a spike is measured against.
+                    - name: ber_threshold
+                      type: double
+                      description: >
+                        BER at or above which a report is a spike:
+                        correlator.ber_factor x ber_effective.
+                    - name: mer_median_db
+                      type: float
+                      description: >
+                        Baseline median MER, dB.
+                    - name: mer_threshold_db
+                      type: float
+                      description: >
+                        MER at or below which a report is a drop: the median
+                        minus correlator.mer_drop_db.
+                    - name: conditions
+                      type: keyword
+                      description: >
+                        Anomalies on the latest report: ber_spike,
+                        ber_saturated, mer_drop, lock_lost.
+                    - name: degraded
+                      type: boolean
+                      description: >
+                        Anomalous for correlator.hysteresis_cycles reports in
+                        a row, and not yet clean for as many.
+                    - name: stressed
+                      type: boolean
+                      description: >
+                        Environmentally Stressed: a BER spike held for
+                        correlator.hysteresis_cycles reports while locked.
+                    - name: bad
+                      type: integer
+                      description: >
+                        Consecutive anomalous reports.
+                    - name: good
+                      type: integer
+                      description: >
+                        Consecutive clean reports.
+                    - name: signature
+                      type: keyword
+                      description: >
+                        For a degraded input: steady_or_rising (power held,
+                        typical of interference), dropping (power fell by
+                        correlator.power_drop_db or more: a fade, feed or
+                        transmitter problem) or unlocked.
+                    - name: power_delta_db
+                      type: float
+                      description: >
+                        Power now minus the median of its clean readings
+                        before the degradation began, dB.
+            - name: b
+              type: group
+              description: >
+                Side B of the pair.
+              fields:
+                - name: view
+                  type: keyword
+                  description: >
+                    degraded, recovering (still degraded but reporting clean again:
+                    keeps an open verdict it was part of, never starts or joins one), clean, guarded (degraded
+                    only by lock loss while
+                    its whole frame is unlocked), stale (no recent report) or
+                    missing (no input on this side for the channel).
+                - name: since
+                  type: date
+                  description: >
+                    When the side's degradation began.
+                - name: conditions
+                  type: keyword
+                  description: >
+                    Anomalies across the side's fresh inputs.
+                - name: instance_ids
+                  type: keyword
+                - name: signatures
+                  type: keyword
+                - name: ber
+                  type: double
+                  description: >
+                    Highest BER across the side's fresh inputs.
+                - name: mer_db
+                  type: integer
+                  description: >
+                    Lowest MER across the side's fresh inputs, dB.
+                - name: power_dbm
+                  type: integer
+                  description: >
+                    Lowest power across the side's fresh inputs, dBm.
+                - name: instances
+                  type: group
+                  description: >
+                    Every input on this side for the channel.
+                  fields:
+                    - name: id
+                      type: keyword
+                      description: >
+                        Demod input, "<host ip>/<slot>/<input>".
+                    - name: host_ip
+                      type: ip
+                    - name: slot
+                      type: integer
+                    - name: input
+                      type: integer
+                    - name: side
+                      type: keyword
+                      description: >
+                        Demod side reported, A or B (empty when the input
+                        reports none).
+                    - name: card_label
+                      type: keyword
+                    - name: frame_label
+                      type: keyword
+                    - name: report_time
+                      type: date
+                      description: >
+                        Timestamp of the input's latest report.
+                    - name: fresh
+                      type: boolean
+                      description: >
+                        Whether the latest report is recent enough
+                        (correlator.stale_after) to count.
+                    - name: locked
+                      type: boolean
+                    - name: ber
+                      type: double
+                      description: >
+                        Latest Pre-FEC BER.
+                    - name: mer_db
+                      type: integer
+                      description: >
+                        Latest MER, dB.
+                    - name: power_dbm
+                      type: integer
+                      description: >
+                        Latest input power, dBm.
+                    - name: ber_effective
+                      type: double
+                      description: >
+                        The baseline BER a spike is measured against.
+                    - name: ber_threshold
+                      type: double
+                      description: >
+                        BER at or above which a report is a spike:
+                        correlator.ber_factor x ber_effective.
+                    - name: mer_median_db
+                      type: float
+                      description: >
+                        Baseline median MER, dB.
+                    - name: mer_threshold_db
+                      type: float
+                      description: >
+                        MER at or below which a report is a drop: the median
+                        minus correlator.mer_drop_db.
+                    - name: conditions
+                      type: keyword
+                      description: >
+                        Anomalies on the latest report: ber_spike,
+                        ber_saturated, mer_drop, lock_lost.
+                    - name: degraded
+                      type: boolean
+                      description: >
+                        Anomalous for correlator.hysteresis_cycles reports in
+                        a row, and not yet clean for as many.
+                    - name: stressed
+                      type: boolean
+                      description: >
+                        Environmentally Stressed: a BER spike held for
+                        correlator.hysteresis_cycles reports while locked.
+                    - name: bad
+                      type: integer
+                      description: >
+                        Consecutive anomalous reports.
+                    - name: good
+                      type: integer
+                      description: >
+                        Consecutive clean reports.
+                    - name: signature
+                      type: keyword
+                      description: >
+                        For a degraded input: steady_or_rising (power held,
+                        typical of interference), dropping (power fell by
+                        correlator.power_drop_db or more: a fade, feed or
+                        transmitter problem) or unlocked.
+                    - name: power_delta_db
+                      type: float
+                      description: >
+                        Power now minus the median of its clean readings
+                        before the degradation began, dB.
+        - name: ducting
+          type: group
+          description: >
+            The ducting on the co-channel paths of the channel, as looked up
+            for the decision.
+          fields:
+            - name: status
+              type: keyword
+              description: >
+                fresh, stale (the last weather poll is older than 2 x period)
+                or no_poll.
+            - name: polled_at
+              type: date
+              description: >
+                When the ducting results were computed (weather poll time).
+            - name: forecast_time
+              type: date
+              description: >
+                The hour the weather applies to.
+            - name: paths_on_channel
+              type: integer
+              description: >
+                Co-channel paths on the LRF and channel.
+            - name: paths_unknown
+              type: integer
+              description: >
+                Of those, paths with no usable weather (an incomplete fetch):
+                their ducting is unknown.
+            - name: strongest
+              type: group
+              description: >
+                The co-channel path with the highest ducting state, the
+                nearest winning a tie.
+              fields:
+                - name: path_id
+                  type: keyword
+                - name: call_sign
+                  type: keyword
+                  description: >
+                    The likely interfering transmitter.
+                - name: facility_id
+                  type: keyword
+                - name: distance_mi
+                  type: float
+                - name: state
+                  type: keyword
+                  description: >
+                    normal, super_refractive, ducting or trapping.
+                - name: level
+                  type: integer
+                  description: >
+                    The state as 0 (normal) to 3 (trapping).
+                - name: ducting_points
+                  type: keyword
+                  description: >
+                    Points of the path with dM/dh < 0: lrf, midpoint,
+                    transmitter.
+            - name: active_path_ids
+              type: keyword
+              description: >
+                Paths on the channel that are ducting or trapping.
+            - name: active_call_signs
+              type: keyword
+              description: >
+                Their transmitters.
+
+    - name: tropobeat.correlation_trace
+      type: group
+      description: >
+        A decision-trace record of the correlation engine: how it judged a
+        report, an input, a pair or the ducting, and why. Categories are
+        enabled with correlator.trace.categories.
+      fields:
+        - name: category
+          type: keyword
+          description: >
+            input, skip, hysteresis, pair, ducting or sweep
+            (correlator.trace.categories).
+        - name: reason
+          type: keyword
+          description: >
+            Short code of what was decided. See CORRELATION.md for every code.
+        - name: decision
+          type: keyword
+          description: >
+            hit (an anomaly or CCI found), miss (not found) or skip (not
+            judged, or a verdict waiting for correlator.pair_grace).
+        - name: message
+          type: text
+          description: >
+            One-line explanation.
+        - name: episode_id
+          type: keyword
+          description: >
+            The episode the record belongs to, as
+            tropobeat.correlation.episode.id.
+        - name: state
+          type: keyword
+          description: >
+            For pair records: the pair state after the decision.
+        - name: lrf
+          type: group
+          fields:
+            - name: location
+              type: geo_point
+              description: >
+                LRF location, when the code is in the LRF list.
+        - name: input
+          type: group
+          description: >
+            For input, skip and hysteresis records: the input and its reading.
+          fields:
+            - name: id
+              type: keyword
+              description: >
+                Demod input, "<host ip>/<slot>/<input>".
+            - name: host_ip
+              type: ip
+            - name: slot
+              type: integer
+            - name: input
+              type: integer
+            - name: side
+              type: keyword
+              description: >
+                Demod side reported, A or B (empty when the input reports
+                none).
+            - name: card_label
+              type: keyword
+            - name: frame_label
+              type: keyword
+            - name: report_time
+              type: date
+              description: >
+                Timestamp of the input's latest report.
+            - name: fresh
+              type: boolean
+              description: >
+                Whether the latest report is recent enough
+                (correlator.stale_after) to count.
+            - name: locked
+              type: boolean
+            - name: ber
+              type: double
+              description: >
+                Latest Pre-FEC BER.
+            - name: mer_db
+              type: integer
+              description: >
+                Latest MER, dB.
+            - name: power_dbm
+              type: integer
+              description: >
+                Latest input power, dBm.
+            - name: ber_effective
+              type: double
+              description: >
+                The baseline BER a spike is measured against.
+            - name: ber_threshold
+              type: double
+              description: >
+                BER at or above which a report is a spike:
+                correlator.ber_factor x ber_effective.
+            - name: mer_median_db
+              type: float
+              description: >
+                Baseline median MER, dB.
+            - name: mer_threshold_db
+              type: float
+              description: >
+                MER at or below which a report is a drop: the median minus
+                correlator.mer_drop_db.
+            - name: conditions
+              type: keyword
+              description: >
+                Anomalies on the latest report: ber_spike, ber_saturated,
+                mer_drop, lock_lost.
+            - name: degraded
+              type: boolean
+              description: >
+                Anomalous for correlator.hysteresis_cycles reports in a row,
+                and not yet clean for as many.
+            - name: stressed
+              type: boolean
+              description: >
+                Environmentally Stressed: a BER spike held for
+                correlator.hysteresis_cycles reports while locked.
+            - name: bad
+              type: integer
+              description: >
+                Consecutive anomalous reports.
+            - name: good
+              type: integer
+              description: >
+                Consecutive clean reports.
+            - name: signature
+              type: keyword
+              description: >
+                For a degraded input: steady_or_rising (power held, typical of
+                interference), dropping (power fell by
+                correlator.power_drop_db or more: a fade, feed or transmitter
+                problem) or unlocked.
+            - name: power_delta_db
+              type: float
+              description: >
+                Power now minus the median of its clean readings before the
+                degradation began, dB.
+        - name: sides
+          type: group
+          fields:
+            - name: a
+              type: group
+              description: >
+                Side A of the pair.
+              fields:
+                - name: view
+                  type: keyword
+                  description: >
+                    degraded, recovering (still degraded but reporting clean again:
+                    keeps an open verdict it was part of, never starts or joins one), clean, guarded (degraded
+                    only by lock loss while
+                    its whole frame is unlocked), stale (no recent report) or
+                    missing (no input on this side for the channel).
+                - name: since
+                  type: date
+                  description: >
+                    When the side's degradation began.
+                - name: conditions
+                  type: keyword
+                  description: >
+                    Anomalies across the side's fresh inputs.
+                - name: instance_ids
+                  type: keyword
+                - name: signatures
+                  type: keyword
+                - name: ber
+                  type: double
+                  description: >
+                    Highest BER across the side's fresh inputs.
+                - name: mer_db
+                  type: integer
+                  description: >
+                    Lowest MER across the side's fresh inputs, dB.
+                - name: power_dbm
+                  type: integer
+                  description: >
+                    Lowest power across the side's fresh inputs, dBm.
+                - name: instances
+                  type: group
+                  description: >
+                    Every input on this side for the channel.
+                  fields:
+                    - name: id
+                      type: keyword
+                      description: >
+                        Demod input, "<host ip>/<slot>/<input>".
+                    - name: host_ip
+                      type: ip
+                    - name: slot
+                      type: integer
+                    - name: input
+                      type: integer
+                    - name: side
+                      type: keyword
+                      description: >
+                        Demod side reported, A or B (empty when the input
+                        reports none).
+                    - name: card_label
+                      type: keyword
+                    - name: frame_label
+                      type: keyword
+                    - name: report_time
+                      type: date
+                      description: >
+                        Timestamp of the input's latest report.
+                    - name: fresh
+                      type: boolean
+                      description: >
+                        Whether the latest report is recent enough
+                        (correlator.stale_after) to count.
+                    - name: locked
+                      type: boolean
+                    - name: ber
+                      type: double
+                      description: >
+                        Latest Pre-FEC BER.
+                    - name: mer_db
+                      type: integer
+                      description: >
+                        Latest MER, dB.
+                    - name: power_dbm
+                      type: integer
+                      description: >
+                        Latest input power, dBm.
+                    - name: ber_effective
+                      type: double
+                      description: >
+                        The baseline BER a spike is measured against.
+                    - name: ber_threshold
+                      type: double
+                      description: >
+                        BER at or above which a report is a spike:
+                        correlator.ber_factor x ber_effective.
+                    - name: mer_median_db
+                      type: float
+                      description: >
+                        Baseline median MER, dB.
+                    - name: mer_threshold_db
+                      type: float
+                      description: >
+                        MER at or below which a report is a drop: the median
+                        minus correlator.mer_drop_db.
+                    - name: conditions
+                      type: keyword
+                      description: >
+                        Anomalies on the latest report: ber_spike,
+                        ber_saturated, mer_drop, lock_lost.
+                    - name: degraded
+                      type: boolean
+                      description: >
+                        Anomalous for correlator.hysteresis_cycles reports in
+                        a row, and not yet clean for as many.
+                    - name: stressed
+                      type: boolean
+                      description: >
+                        Environmentally Stressed: a BER spike held for
+                        correlator.hysteresis_cycles reports while locked.
+                    - name: bad
+                      type: integer
+                      description: >
+                        Consecutive anomalous reports.
+                    - name: good
+                      type: integer
+                      description: >
+                        Consecutive clean reports.
+                    - name: signature
+                      type: keyword
+                      description: >
+                        For a degraded input: steady_or_rising (power held,
+                        typical of interference), dropping (power fell by
+                        correlator.power_drop_db or more: a fade, feed or
+                        transmitter problem) or unlocked.
+                    - name: power_delta_db
+                      type: float
+                      description: >
+                        Power now minus the median of its clean readings
+                        before the degradation began, dB.
+            - name: b
+              type: group
+              description: >
+                Side B of the pair.
+              fields:
+                - name: view
+                  type: keyword
+                  description: >
+                    degraded, recovering (still degraded but reporting clean again:
+                    keeps an open verdict it was part of, never starts or joins one), clean, guarded (degraded
+                    only by lock loss while
+                    its whole frame is unlocked), stale (no recent report) or
+                    missing (no input on this side for the channel).
+                - name: since
+                  type: date
+                  description: >
+                    When the side's degradation began.
+                - name: conditions
+                  type: keyword
+                  description: >
+                    Anomalies across the side's fresh inputs.
+                - name: instance_ids
+                  type: keyword
+                - name: signatures
+                  type: keyword
+                - name: ber
+                  type: double
+                  description: >
+                    Highest BER across the side's fresh inputs.
+                - name: mer_db
+                  type: integer
+                  description: >
+                    Lowest MER across the side's fresh inputs, dB.
+                - name: power_dbm
+                  type: integer
+                  description: >
+                    Lowest power across the side's fresh inputs, dBm.
+                - name: instances
+                  type: group
+                  description: >
+                    Every input on this side for the channel.
+                  fields:
+                    - name: id
+                      type: keyword
+                      description: >
+                        Demod input, "<host ip>/<slot>/<input>".
+                    - name: host_ip
+                      type: ip
+                    - name: slot
+                      type: integer
+                    - name: input
+                      type: integer
+                    - name: side
+                      type: keyword
+                      description: >
+                        Demod side reported, A or B (empty when the input
+                        reports none).
+                    - name: card_label
+                      type: keyword
+                    - name: frame_label
+                      type: keyword
+                    - name: report_time
+                      type: date
+                      description: >
+                        Timestamp of the input's latest report.
+                    - name: fresh
+                      type: boolean
+                      description: >
+                        Whether the latest report is recent enough
+                        (correlator.stale_after) to count.
+                    - name: locked
+                      type: boolean
+                    - name: ber
+                      type: double
+                      description: >
+                        Latest Pre-FEC BER.
+                    - name: mer_db
+                      type: integer
+                      description: >
+                        Latest MER, dB.
+                    - name: power_dbm
+                      type: integer
+                      description: >
+                        Latest input power, dBm.
+                    - name: ber_effective
+                      type: double
+                      description: >
+                        The baseline BER a spike is measured against.
+                    - name: ber_threshold
+                      type: double
+                      description: >
+                        BER at or above which a report is a spike:
+                        correlator.ber_factor x ber_effective.
+                    - name: mer_median_db
+                      type: float
+                      description: >
+                        Baseline median MER, dB.
+                    - name: mer_threshold_db
+                      type: float
+                      description: >
+                        MER at or below which a report is a drop: the median
+                        minus correlator.mer_drop_db.
+                    - name: conditions
+                      type: keyword
+                      description: >
+                        Anomalies on the latest report: ber_spike,
+                        ber_saturated, mer_drop, lock_lost.
+                    - name: degraded
+                      type: boolean
+                      description: >
+                        Anomalous for correlator.hysteresis_cycles reports in
+                        a row, and not yet clean for as many.
+                    - name: stressed
+                      type: boolean
+                      description: >
+                        Environmentally Stressed: a BER spike held for
+                        correlator.hysteresis_cycles reports while locked.
+                    - name: bad
+                      type: integer
+                      description: >
+                        Consecutive anomalous reports.
+                    - name: good
+                      type: integer
+                      description: >
+                        Consecutive clean reports.
+                    - name: signature
+                      type: keyword
+                      description: >
+                        For a degraded input: steady_or_rising (power held,
+                        typical of interference), dropping (power fell by
+                        correlator.power_drop_db or more: a fade, feed or
+                        transmitter problem) or unlocked.
+                    - name: power_delta_db
+                      type: float
+                      description: >
+                        Power now minus the median of its clean readings
+                        before the degradation began, dB.
+        - name: ducting
+          type: group
+          description: >
+            The ducting on the co-channel paths of the channel, as looked up
+            for the decision.
+          fields:
+            - name: status
+              type: keyword
+              description: >
+                fresh, stale (the last weather poll is older than 2 x period)
+                or no_poll.
+            - name: polled_at
+              type: date
+              description: >
+                When the ducting results were computed (weather poll time).
+            - name: forecast_time
+              type: date
+              description: >
+                The hour the weather applies to.
+            - name: paths_on_channel
+              type: integer
+              description: >
+                Co-channel paths on the LRF and channel.
+            - name: paths_unknown
+              type: integer
+              description: >
+                Of those, paths with no usable weather (an incomplete fetch):
+                their ducting is unknown.
+            - name: strongest
+              type: group
+              description: >
+                The co-channel path with the highest ducting state, the
+                nearest winning a tie.
+              fields:
+                - name: path_id
+                  type: keyword
+                - name: call_sign
+                  type: keyword
+                  description: >
+                    The likely interfering transmitter.
+                - name: facility_id
+                  type: keyword
+                - name: distance_mi
+                  type: float
+                - name: state
+                  type: keyword
+                  description: >
+                    normal, super_refractive, ducting or trapping.
+                - name: level
+                  type: integer
+                  description: >
+                    The state as 0 (normal) to 3 (trapping).
+                - name: ducting_points
+                  type: keyword
+                  description: >
+                    Points of the path with dM/dh < 0: lrf, midpoint,
+                    transmitter.
+            - name: active_path_ids
+              type: keyword
+              description: >
+                Paths on the channel that are ducting or trapping.
+            - name: active_call_signs
+              type: keyword
+              description: >
+                Their transmitters.
+        - name: sweep
+          type: group
+          fields:
+            - name: instances
+              type: integer
+            - name: expired
+              type: integer
+            - name: pairs
+              type: integer
+            - name: not_clear
+              type: integer
+            - name: reevaluated
+              type: integer
+            - name: trace_dropped
+              type: long
+              description: >
+                Trace records dropped since start.

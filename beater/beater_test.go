@@ -433,7 +433,7 @@ func TestDuctingEventInsufficientData(t *testing.T) {
 func TestMockWeatherServer(t *testing.T) {
 	cfg := mock.DefaultConfig
 	cfg.Enabled = true
-	srv, url, err := startMockWeather(cfg)
+	srv, url, err := startMockWeather(cfg, &mock.Sites{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,6 +452,39 @@ func TestMockWeatherServer(t *testing.T) {
 		t.Error("requests should fail once the mock server is stopped")
 	}
 	stopMockWeather(nil) // safe without a server
+}
+
+func TestSetMockSites(t *testing.T) {
+	sites := &mock.Sites{}
+	cfg := mock.DefaultConfig
+	cfg.Enabled, cfg.Scenario = true, mock.ScenarioNormal
+	cfg.Sites = map[string]string{"terh": mock.ScenarioTrapped}
+	srv, url, err := startMockWeather(cfg, sites)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopMockWeather(srv)
+	p := testPath()
+	setMockSites(sites, cfg.Sites, []lrf.LRF{{Code: "TERH", Latitude: p.LRF.Lat, Longitude: p.LRF.Lon}}, []cochannel.Path{p})
+
+	client, err := openmeteo.New(openmeteo.Config{URL: url, MaxRetries: 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	coords := []openmeteo.Coordinate{
+		{Lat: p.Midpoint.Lat, Lon: p.Midpoint.Lon},
+		{Lat: 42.65, Lon: -71.22}, // BOS: not overridden
+	}
+	profiles, err := client.Profiles(context.Background(), coords, time.Now())
+	if err != nil || len(profiles) != 2 {
+		t.Fatalf("profiles: %d, err %v", len(profiles), err)
+	}
+	if a := ducting.Analyse(profiles[0], ducting.DefaultConfig); a.Class != ducting.Ducting {
+		t.Errorf("TERH path midpoint class %s, want ducting (trapped override)", a.Class)
+	}
+	if a := ducting.Analyse(profiles[1], ducting.DefaultConfig); a.Class != ducting.Normal {
+		t.Errorf("BOS class %s, want normal", a.Class)
+	}
 }
 
 func TestTagMock(t *testing.T) {

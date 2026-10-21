@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -31,12 +32,15 @@ const (
 	ScenarioElevated        = "elevated"
 	ScenarioTrappedUHF      = "trapped_uhf"
 	ScenarioTrapped         = "trapped"
+	// ScenarioNoData returns no values (nulls), so the ducting calculation
+	// has insufficient data, as when the weather service has gaps.
+	ScenarioNoData = "no_data"
 )
 
 // Scenarios lists every scenario name.
 var Scenarios = []string{
 	ScenarioMixed, ScenarioNormal, ScenarioSuperRefractive, ScenarioDucting,
-	ScenarioElevated, ScenarioTrappedUHF, ScenarioTrapped,
+	ScenarioElevated, ScenarioTrappedUHF, ScenarioTrapped, ScenarioNoData,
 }
 
 // Config configures the mock weather source.
@@ -48,6 +52,16 @@ type Config struct {
 	// Cycle is how long, with the mixed scenario, each location takes to
 	// pass through every state.
 	Cycle time.Duration `config:"cycle"`
+	// Sites overrides the scenario for chosen LRFs (code → scenario): every
+	// point of their co-channel paths gets that scenario, so a replayed
+	// test can line up with known ducting. A point shared with another
+	// LRF's path (a common transmitter) gets the override too.
+	Sites map[string]string `config:"sites"`
+	// FailEvery and FailFor make the mock answer HTTP 503 for FailFor at
+	// the start of every FailEvery (aligned to the clock), so weather polls
+	// fail and the ducting results go stale. 0 = never.
+	FailEvery time.Duration `config:"fail_every"`
+	FailFor   time.Duration `config:"fail_for"`
 }
 
 // DefaultConfig is disabled, with the mixed scenario on a 6-hour cycle.
@@ -64,7 +78,67 @@ func (c Config) Validate() error {
 	if c.Cycle <= 0 {
 		return errors.New("openmeteo.mock.cycle must be positive")
 	}
+	for code, sc := range c.Sites {
+		if !slices.Contains(Scenarios, sc) {
+			return fmt.Errorf("openmeteo.mock.sites.%s %q: must be one of %s", code, sc, strings.Join(Scenarios, ", "))
+		}
+	}
+	if c.FailEvery < 0 || c.FailFor < 0 || (c.FailEvery > 0 && c.FailFor >= c.FailEvery) {
+		return errors.New("openmeteo.mock.fail_for must be shorter than fail_every, and neither negative")
+	}
 	return nil
+}
+
+// failing reports whether the mock answers 503 at t (FailEvery/FailFor).
+func (c Config) failing(t time.Time) bool {
+	if c.FailEvery <= 0 || c.FailFor <= 0 {
+		return false
+	}
+	return time.Duration(t.UnixNano())%c.FailEvery < c.FailFor
+}
+
+// siteMatchDeg is how close (in degrees) a requested coordinate must be to
+// a site override point to take its scenario. It covers the rounding of
+// openmeteo.coordinate_precision.
+const siteMatchDeg = 0.1
+
+// SitePoint is a point of an overridden LRF's co-channel paths and the
+// scenario it gets.
+type SitePoint struct {
+	Lat, Lon float64
+	Scenario string
+}
+
+// Sites holds the site override points. Tropobeat replaces them after each
+// co-channel discovery run; the handler reads them on every request.
+type Sites struct {
+	pts atomic.Pointer[[]SitePoint]
+}
+
+// Set replaces the override points.
+func (s *Sites) Set(pts []SitePoint) { s.pts.Store(&pts) }
+
+// scenario returns the scenario of the nearest override point within
+// siteMatchDeg of c.
+func (s *Sites) scenario(c coordinate) (string, bool) {
+	if s == nil {
+		return "", false
+	}
+	pts := s.pts.Load()
+	if pts == nil {
+		return "", false
+	}
+	best, bestD := "", math.Inf(1)
+	for _, p := range *pts {
+		dLat, dLon := math.Abs(p.Lat-c.lat), math.Abs(p.Lon-c.lon)
+		if dLat > siteMatchDeg || dLon > siteMatchDeg {
+			continue
+		}
+		if d := dLat*dLat + dLon*dLon; d < bestD {
+			best, bestD = p.Scenario, d
+		}
+	}
+	return best, best != ""
 }
 
 // timeLayout is Open-Meteo's hourly time format.
@@ -72,9 +146,16 @@ const timeLayout = "2006-01-02T15:04"
 
 // Handler serves GET requests in the Open-Meteo forecast API format
 // (latitude and longitude as comma-separated lists, hourly variables,
-// forecast_days). now supplies the current time.
-func Handler(cfg Config, now func() time.Time) http.Handler {
+// forecast_days). now supplies the current time. sites holds the per-LRF
+// scenario overrides (cfg.Sites); nil means none.
+func Handler(cfg Config, now func() time.Time, sites *Sites) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if cfg.failing(now()) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": true, "reason": "mock weather failure window (openmeteo.mock.fail_every)"})
+			return
+		}
 		q := r.URL.Query()
 		coords, err := parseCoordinates(q.Get("latitude"), q.Get("longitude"))
 		if err != nil {
@@ -107,7 +188,14 @@ func Handler(cfg Config, now func() time.Time) http.Handler {
 				times[h] = at.Format(timeLayout)
 				// The current hour uses the current time, so the mixed pattern
 				// moves between polls; other hours keep the same offset.
-				p := build(cfg, c, at.Add(t.Sub(hourStart)), levels)
+				pc := cfg
+				if sc, ok := sites.scenario(c); ok {
+					pc.Scenario = sc
+				}
+				if pc.Scenario == ScenarioNoData {
+					continue // every value stays null
+				}
+				p := build(pc, c, at.Add(t.Sub(hourStart)), levels)
 				for _, v := range vars {
 					hourly[v][h] = p.value(v)
 				}

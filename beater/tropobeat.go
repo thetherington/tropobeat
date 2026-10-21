@@ -18,9 +18,11 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 
 	tropoCfg "github.com/thetherington/tropobeat/config"
+	"github.com/thetherington/tropobeat/internal/correlator"
 	"github.com/thetherington/tropobeat/internal/demod"
 	"github.com/thetherington/tropobeat/internal/elastic"
 	"github.com/thetherington/tropobeat/internal/openmeteo"
+	"github.com/thetherington/tropobeat/internal/openmeteo/mock"
 	"github.com/thetherington/tropobeat/internal/rabbitmqclient"
 )
 
@@ -51,8 +53,10 @@ type tropobeat struct {
 	baselineJob    gocron.Job
 	weatherJob     gocron.Job
 	afterDiscovery sync.Once
-	// mock serves simulated weather when openmeteo.mock is enabled.
-	mock *http.Server
+	// mock serves simulated weather when openmeteo.mock is enabled, and
+	// mockSites holds its per-LRF scenario overrides.
+	mock      *http.Server
+	mockSites *mock.Sites
 
 	// rabbit consumes the live demod report stream. Nil when
 	// rabbitmq.enabled is false.
@@ -62,6 +66,11 @@ type tropobeat struct {
 	// ducting holds the latest ducting result of every co-channel path
 	// (weather poll).
 	ducting *ductingStore
+	// correlator judges the live demod reports against the baselines and
+	// ducting. Nil when RabbitMQ or correlator.enabled is off.
+	correlator *correlator.Engine
+	// traceLog logs trace records when correlator.trace.log is set.
+	traceLog *logp.Logger
 }
 
 // New creates an instance of tropobeat.
@@ -77,6 +86,7 @@ func New(b *beat.Beat, cfg *config.C) (beat.Beater, error) {
 	var (
 		weather    openmeteo.Client
 		mockServer *http.Server
+		mockSites  *mock.Sites
 	)
 	if c.OpenMeteo.Enabled {
 		omCfg := c.OpenMeteo.Config
@@ -90,7 +100,8 @@ func New(b *beat.Beat, cfg *config.C) (beat.Beater, error) {
 			// the weather is simulated: LRFs, demod channels, FCC
 			// transmitters and co-channel discovery stay real.
 			var err error
-			mockServer, omCfg.URL, err = startMockWeather(c.OpenMeteo.Mock)
+			mockSites = &mock.Sites{}
+			mockServer, omCfg.URL, err = startMockWeather(c.OpenMeteo.Mock, mockSites)
 			if err != nil {
 				return nil, err
 			}
@@ -146,19 +157,38 @@ func New(b *beat.Beat, cfg *config.C) (beat.Beater, error) {
 		return nil, fmt.Errorf("creating scheduler: %w", err)
 	}
 
+	baselines := newBaselineStore(c.Baseline.MaxAge)
+	ductingResults := newDuctingStore(c.Period)
+	// The correlation engine runs on the live stream, so only with RabbitMQ.
+	var engine *correlator.Engine
+	if rabbit != nil && c.Correlator.Enabled {
+		engine, err = newCorrelator(c.Correlator, baselines, ductingResults)
+		if err != nil {
+			stopMockWeather(mockServer)
+			return nil, fmt.Errorf("starting correlator: %w", err)
+		}
+	}
+	var traceLog *logp.Logger
+	if c.Correlator.Trace.Log {
+		traceLog = logp.NewLogger(correlatorDebugSelector)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	bt := &tropobeat{
-		ctx:       ctx,
-		cancel:    cancel,
-		config:    c,
-		logger:    logger,
-		es:        es,
-		weather:   weather,
-		scheduler: scheduler,
-		mock:      mockServer,
-		rabbit:    rabbit,
-		baselines: newBaselineStore(c.Baseline.MaxAge),
-		ducting:   newDuctingStore(c.Period),
+		ctx:        ctx,
+		cancel:     cancel,
+		config:     c,
+		logger:     logger,
+		es:         es,
+		weather:    weather,
+		scheduler:  scheduler,
+		mock:       mockServer,
+		mockSites:  mockSites,
+		rabbit:     rabbit,
+		baselines:  baselines,
+		ducting:    ductingResults,
+		correlator: engine,
+		traceLog:   traceLog,
 	}
 	return bt, nil
 }
@@ -191,15 +221,27 @@ func (bt *tropobeat) Run(b *beat.Beat) error {
 }
 
 // consume runs until tropobeat stops, reading the live demod stream when
-// RabbitMQ is enabled. Each message is decoded into a demod report and
-// acknowledged; malformed ones are rejected without requeueing. In Phase 4a
-// the reports are only counted, for the ingest summary logged every minute.
+// RabbitMQ is enabled. Each message is decoded into a demod report, handed
+// to the correlator and acknowledged; malformed ones are rejected without
+// requeueing. The correlator's verdict events and trace records are
+// published from here, and an ingest summary is logged every minute.
 func (bt *tropobeat) consume() error {
-	// deliveries stays nil when RabbitMQ is off. A nil channel never
-	// receives, so the loop then just waits for shutdown.
-	var deliveries <-chan amqp.Delivery
+	// deliveries, events and traces stay nil when their source is off. A
+	// nil channel never receives, so the loop then just waits for shutdown.
+	var (
+		deliveries <-chan amqp.Delivery
+		events     <-chan correlator.Event
+		traces     <-chan correlator.Trace
+		prevStats  correlator.Stats
+	)
 	if bt.rabbit != nil {
 		deliveries = bt.rabbit.Consume(bt.ctx)
+	}
+	if bt.correlator != nil {
+		events = bt.correlator.Events()
+		if bt.correlator.Tracing() {
+			traces = bt.correlator.Traces()
+		}
 	}
 	summary := time.NewTicker(ingestSummaryInterval)
 	defer summary.Stop()
@@ -223,13 +265,45 @@ func (bt *tropobeat) consume() error {
 				stats.reject(err)
 				continue
 			}
+			// The report is acknowledged once the correlator has it. Submit
+			// only fails when the correlator is closed (shutting down); the
+			// report then goes back to the queue.
+			if bt.correlator != nil && !bt.correlator.Submit(r) {
+				_ = d.Nack(false, true)
+				continue
+			}
 			_ = d.Ack(false)
 			stats.count(r)
+
+		case ev, ok := <-events:
+			if !ok {
+				events = nil
+				continue
+			}
+			logEvent(bt.logger, ev)
+			if bt.config.Correlator.Publish {
+				bt.client.Publish(correlationEvent(ev, bt.state.Load()))
+			}
+
+		case tr, ok := <-traces:
+			if !ok {
+				traces = nil
+				continue
+			}
+			if bt.traceLog != nil {
+				logTrace(bt.traceLog, tr)
+			}
+			bt.client.Publish(correlationTraceEvent(tr, bt.state.Load()))
 
 		case <-summary.C:
 			if bt.rabbit != nil {
 				bt.logger.Info(stats.summary(bt.rabbit.Reconnects()))
 				stats = newIngestStats()
+			}
+			if bt.correlator != nil {
+				s := bt.correlator.Stats()
+				bt.logger.Info(correlatorSummary(s, prevStats))
+				prevStats = s
 			}
 		}
 	}
@@ -313,6 +387,9 @@ func (bt *tropobeat) Stop() {
 	bt.cancel()
 	if bt.rabbit != nil {
 		bt.rabbit.Close()
+	}
+	if bt.correlator != nil {
+		bt.correlator.Close()
 	}
 	if err := bt.scheduler.Shutdown(); err != nil {
 		bt.logger.Warnf("Stopping scheduler: %v", err)

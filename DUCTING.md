@@ -2,7 +2,7 @@
 
 How tropobeat turns weather into a ducting score, what each class means, and how to read the `ducting` results in Kibana.
 
-For project status and open questions, see the [rolling plan](ROLLING_PLAN.md).
+For how these results are matched with the live demod telemetry, see [CORRELATION.md](CORRELATION.md). For project status and open questions, see the [rolling plan](ROLLING_PLAN.md).
 
 ## Contents
 
@@ -265,6 +265,8 @@ The `points`, `layers` and `ducts` lists are stored as plain objects so Kibana c
 | High score at the midpoint | The middle of the path is ducting, which matters most for a signal crossing the whole path. |
 | `insufficient_data` | Too few usable heights: usually a high site where most levels are underground, or missing weather data. |
 | No ducting event for a location | With `ducting.publish: all` (the default), the weather fetch failed for that location in that poll. With `publish: notable`, the location wasn't super-refractive or ducting; its weather event still has its score and class. |
+
+**How the correlator uses these results.** A path whose ducting state is `ducting` or `trapping` (dM/dh < 0 at one of its points) is the environmental evidence the correlation engine needs before it reports co-channel interference on that LRF and channel. It also needs both demod sides degraded at the same time. `trapping` is reported as the stronger evidence, and the strongest path's transmitter is named as the likely interferer. See [CORRELATION.md](CORRELATION.md#6-step-4-is-a-co-channel-path-ducting).
 
 ## 9. Kibana Maps setup
 

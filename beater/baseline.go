@@ -14,6 +14,7 @@ import (
 
 	tropoCfg "github.com/thetherington/tropobeat/config"
 	"github.com/thetherington/tropobeat/internal/cochannel"
+	"github.com/thetherington/tropobeat/internal/correlator"
 	"github.com/thetherington/tropobeat/internal/demod"
 	"github.com/thetherington/tropobeat/internal/lrf"
 )
@@ -117,6 +118,31 @@ func (s *baselineStore) Len() (int, time.Time) {
 	return len(set.byKey), set.at
 }
 
+// correlatorBaselines gives the correlator the baselines it judges live
+// reports against. While the baselines are older than baseline.max_age,
+// every input is reported with status "stale", so the correlator can say
+// why it skipped the report.
+type correlatorBaselines struct{ s *baselineStore }
+
+func (c correlatorBaselines) Lookup(inst demod.Instance, rfChannel int) (correlator.Baseline, bool) {
+	set := c.s.cur.Load()
+	if set == nil {
+		return correlator.Baseline{}, false
+	}
+	if c.s.now().Sub(set.at) > c.s.maxAge {
+		return correlator.Baseline{Status: baselineStale, RunID: set.runID}, true
+	}
+	b, ok := set.byKey[baselineKey{inst, rfChannel}]
+	if !ok {
+		return correlator.Baseline{}, false
+	}
+	return correlator.Baseline{Status: b.Status, EffectiveBER: b.EffectiveBER, MedianMER: b.MedianMER, RunID: set.runID}, true
+}
+
+// baselineStale is the status the correlator sees while every baseline is
+// older than baseline.max_age. It is never published on a baseline.
+const baselineStale = "stale"
+
 // runBaseline computes the baselines of every demod instance from the last
 // baseline.window_days of demod telemetry, swaps them into memory and
 // publishes them. On error the previous baselines are kept.
@@ -172,7 +198,7 @@ func (bt *tropobeat) runBaseline(ctx context.Context) error {
 				site = &l
 			}
 			onChannel := byChannel[demod.ChannelKey{LRF: b.LRF, RFChannel: b.RFChannel}]
-			events = append(events, baselineEvent(b, site, onChannel, discoveryRunID, runID, start))
+			events = append(events, baselineEvent(b, site, onChannel, discoveryRunID, runID, start, bt.config.Correlator))
 		}
 		bt.client.PublishAll(events)
 	}

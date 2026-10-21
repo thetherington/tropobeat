@@ -4,16 +4,27 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/thetherington/tropobeat/internal/correlator"
 	"github.com/thetherington/tropobeat/internal/demod"
 	"github.com/thetherington/tropobeat/internal/ducting"
 )
 
 // pathDucting is the latest ducting result along one co-channel path: the
-// class and steepest gradient at its LRF, midpoint and transmitter.
+// class and steepest gradient at its LRF, midpoint and transmitter, and the
+// path's ducting state for its channel.
 type pathDucting struct {
 	PathID    string
 	LRF       string
 	RFChannel int
+	// CallSign, FacilityID and DistanceMi describe the path's transmitter,
+	// so the correlator can name the likely interferer.
+	CallSign   string
+	FacilityID string
+	DistanceMi float64
+	// State is the path's ducting state (normal to trapping), as published
+	// on its weather event. Empty when no point of the path has usable
+	// weather (the fetch was incomplete or had gaps): unknown, not normal.
+	State ducting.State
 	// ForecastTime is the hour the weather applies to.
 	ForecastTime time.Time
 	Points       []pointDucting
@@ -107,6 +118,34 @@ func (s *ductingStore) MNegative(lrf string, rfChannel int, at time.Time) (neg, 
 	return false, true
 }
 
+// Channel returns the ducting of every co-channel path on an LRF's RF
+// channel for the correlator, with whether the results are fresh, stale or
+// not yet available.
+func (s *ductingStore) Channel(lrf string, rfChannel int, at time.Time) correlator.ChannelDucting {
+	set := s.cur.Load()
+	if set == nil {
+		return correlator.ChannelDucting{Status: correlator.DuctingNoPoll}
+	}
+	cd := correlator.ChannelDucting{Status: correlator.DuctingFresh, PolledAt: set.polledAt}
+	if at.Sub(set.polledAt) > s.maxAge {
+		cd.Status = correlator.DuctingStale
+	}
+	for _, p := range set.byChannel[demod.ChannelKey{LRF: lrf, RFChannel: rfChannel}] {
+		cd.ForecastTime = p.ForecastTime
+		ev := correlator.PathEvidence{
+			PathID: p.PathID, CallSign: p.CallSign, FacilityID: p.FacilityID,
+			DistanceMi: p.DistanceMi, State: p.State,
+		}
+		for _, pt := range p.Points {
+			if pt.MNegative() {
+				ev.DuctingPoints = append(ev.DuctingPoints, pt.Label)
+			}
+		}
+		cd.Paths = append(cd.Paths, ev)
+	}
+	return cd
+}
+
 // LRFMNegative reports whether any co-channel path of an LRF, on any
 // channel, has dM/dh < 0. known is as for MNegative.
 func (s *ductingStore) LRFMNegative(lrf string, at time.Time) (neg, known bool) {
@@ -122,9 +161,11 @@ func (s *ductingStore) LRFMNegative(lrf string, at time.Time) (neg, known bool) 
 	return false, true
 }
 
-// pathDuctingFrom builds the ducting results of the complete path groups of
-// a weather poll from the analysed locations. LRF-only groups have no path
-// and are skipped.
+// pathDuctingFrom builds the ducting results of the path groups of a weather
+// poll from the analysed locations. LRF-only groups have no path and are
+// skipped. Path groups whose weather is missing or unusable are kept with an
+// empty State, so the correlator sees the path as unknown rather than the
+// channel as having no co-channel paths.
 func pathDuctingFrom(groups []fetchedGroup, locs map[string]*location) []pathDucting {
 	out := make([]pathDucting, 0, len(groups))
 	for _, fg := range groups {
@@ -132,10 +173,14 @@ func pathDuctingFrom(groups []fetchedGroup, locs map[string]*location) []pathDuc
 			continue
 		}
 		pd := pathDucting{
-			PathID:    fg.group.ID,
-			LRF:       demod.NormalizeLRF(fg.path.LRFCode),
-			RFChannel: fg.path.RFChannel,
+			PathID:     fg.group.ID,
+			LRF:        demod.NormalizeLRF(fg.path.LRFCode),
+			RFChannel:  fg.path.RFChannel,
+			CallSign:   fg.path.Transmitter.CallSign,
+			FacilityID: fg.path.Transmitter.FacilityID,
+			DistanceMi: fg.path.DistanceMi,
 		}
+		var analyses []ducting.Analysis
 		for _, pt := range fg.group.Points {
 			if pt.Profile == nil {
 				continue
@@ -145,7 +190,17 @@ func pathDuctingFrom(groups []fetchedGroup, locs map[string]*location) []pathDuc
 			if loc == nil || !loc.analysis.Usable() {
 				continue
 			}
+			analyses = append(analyses, loc.analysis)
 			pd.Points = append(pd.Points, pointDucting{Label: pt.Label, Class: loc.analysis.Class, MinDNdh: loc.analysis.MinDNdh})
+		}
+		// The same state as the path's weather event: trapping needs the
+		// channel's frequency, so a non-TV channel is never trapping.
+		var mhz []float64
+		if f, ok := ducting.ChannelMHz(fg.path.RFChannel); ok {
+			mhz = []float64{f}
+		}
+		if st, ok := ducting.StateOf(analyses, mhz); ok {
+			pd.State = st
 		}
 		out = append(out, pd)
 	}
