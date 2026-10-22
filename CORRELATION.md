@@ -35,25 +35,7 @@ What it does **not** decide yet: whether a whole LRF is down for a power or back
 
 ## 2. The evidence it combines
 
-```
- Live demod reports            7-day baselines            Co-channel paths + ducting
- (MER, Pre-FEC BER,            (median BER and MER        (every same-channel transmitter
-  power, lock; ~1/min)          of each input)             within 200 miles, and the
-          │                          │                     latest ducting along each path)
-          └──────────┬───────────────┘                                  │
-                     ▼                                                  │
-        Step 1  Is this input stressed?                                 │
-        Step 2  Has it been for 3 reports in a row?                     │
-                     │                                                  │
-                     ▼                                                  │
-        Step 3  Are side A and side B both degraded?                    │
-                     │                                                  │
-                     ▼                                                  ▼
-        Step 4  Is a co-channel path on this channel ducting? ◄─────────┘
-                     │
-                     ▼
-              One verdict per LRF and channel
-```
+![How a verdict is reached: live demod reports and 7-day baselines feed four checks in turn (is the input stressed, has it lasted 3 reports, are sides A and B both degraded, is a co-channel path on the channel ducting); co-channel paths and their latest ducting feed the fourth check. Passing all four gives cci_confirmed. A no at each check leads to a clean input, nothing raised yet, single_side or unpaired, or dual_unexplained or dual_ducting_unknown](docs/images/correlation-steps.svg)
 
 | Evidence | Where it comes from | How fresh |
 |---|---|---|

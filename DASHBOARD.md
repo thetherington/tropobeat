@@ -122,7 +122,7 @@ For checking and explaining the correlation engine: why a channel was or wasn't 
 |---|---|
 | **Verdicts: latest event per LRF and channel** | The current verdict of every LRF and channel that has had one, worst first: the event kind, the reason, the strength (ducting or trapping), the likely interfering transmitter and its distance, each side's view, and how long the episode has lasted. |
 | **Correlation reference** | The verdicts, the trace categories and decisions, and where to look when a channel didn't alert. |
-| **Verdict per LRF and channel** | A heat map of each LRF and channel's verdict over time, minute by minute, from 0 (clear) to 5 (cci_confirmed). Shows when episodes started, how long they lasted and how they changed. |
+| **Verdict per LRF and channel** | A heat map of each LRF and channel's verdict over time, from 0 (clear) to 5 (cci_confirmed), with about 75 columns across the selected time range. Shows when episodes started, how long they lasted and how they changed. It is filled from the verdict events and the once-a-minute `pair` trace records, so with `pair` tracing turned off an open episode only shows every 5 minutes (its ongoing events). Pairs that stay clear don't appear. |
 | **Decision trace: reasons over time** | Trace records per minute, stacked by reason. A burst of one reason (for example `other_side_stale`) points straight at the cause. |
 | **Verdict events by verdict** | Verdict events per minute, by verdict (start, update, ongoing and clear events together). |
 | **Pair decisions: latest per LRF and channel** | The latest A/B decision for each LRF and channel: decision, reason, verdict, each side's view and anomalies, the strongest path, and the one-line explanation. |
@@ -161,7 +161,7 @@ The 0.6 boundary in the table colours, the chart's reference line and the **Duct
 - **Map layers draw up to 10,000 rows.** On the Co-channel paths map with every LRF in view, the full network may exceed that; pick an LRF.
 - **Time range and polling.** Ducting Watch opens on the last 2 hours. With hourly polls, a shorter range can briefly hold no poll, and the latest-poll panels go blank.
 - **MER and BER on Ducting Watch** are not shown yet; the Correlation debug dashboard shows them from the decision trace.
-- **Correlation debug panels** query `tropobeat-*` with ES|QL, like Ducting Watch. The verdict heat map buckets by minute, so on a time range of many hours it gets dense; narrow the range or pick an LRF.
+- **Correlation debug panels** query `tropobeat-*` with ES|QL, like Ducting Watch. The verdict heat map's columns widen with the time range (1 minute over the last hour, 30 minutes over a day), so a short episode can share a column with clear minutes; narrow the range to see it minute by minute.
 
 ## 7. Changing the dashboards
 

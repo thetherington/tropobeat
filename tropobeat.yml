@@ -12,7 +12,7 @@ tropobeat:
   # Limit tropobeat to these LRF codes, for limited runs and testing. Only
   # these LRFs' co-channel paths are discovered and only their weather is
   # fetched. Empty or unset means all LRFs.
-  lrf_sites: ["TERH", "PROV", "BOS"]
+  lrf_sites: ["TERH", "PROV", "BOS", "PIT", "WDC"]
 
   # Elasticsearch cluster that tropobeat reads reference data from (the LRF
   # sites loaded with `tropobeat insert lrfcoordinates`). This is separate
@@ -50,7 +50,7 @@ tropobeat:
   openmeteo:
     # Set to false to turn weather polling off: tropobeat then only runs the
     # daily co-channel discovery and makes no Open-Meteo calls.
-    # enabled: false
+    enabled: true
 
     # API key for Open-Meteo commercial plans. Leave unset to use the free
     # API, which is for non-commercial use only. When set, requests go to
@@ -69,12 +69,21 @@ tropobeat:
       enabled: true
       # mixed (every location cycles through all states, varying with
       # place), or one state everywhere: normal, super_refractive, ducting
-      # (thin, traps nothing), elevated, trapped_uhf, trapped (traps VHF too).
+      # (thin, traps nothing), elevated, trapped_uhf, trapped (traps VHF too),
+      # no_data (no values: insufficient data).
       scenario: mixed
       # mixed only: how long each location takes to pass through every state.
       cycle: 20m
-    # Timeout for each API request.
-    timeout: 30s
+      # Per-LRF scenarios, applied to every point of the LRF's co-channel
+      # paths, to line ducting up with replayed test telemetry.
+      sites:
+        TERH: trapped
+        BOS: normal
+        PROV: ducting
+      # Fail every poll for fail_for at the start of every fail_every, so
+      # the ducting results go stale. 0 = never.
+      #fail_every: 0
+      #fail_for: 0
 
   # Ducting calculation, run on every weather poll (see DUCTING.md).
   # "all" publishes a ducting event for every location on every poll;
@@ -137,6 +146,29 @@ tropobeat:
     # failure up to reconnect_max.
     #reconnect_interval: 1s
     #reconnect_max: 30s
+
+  # The correlation engine: judges each live demod report against its
+  # baseline, pairs the side A and B demods of each LRF and RF channel, and
+  # confirms co-channel interference (CCI) when both sides are degraded and
+  # a co-channel path on the channel is ducting. Runs only with rabbitmq
+  # enabled. See CORRELATION.md.
+  correlator:
+    #enabled: true
+    # Publish verdicts as the correlation metricset.
+    #publish: true
+    # BER spike: BER at least ber_factor x the baseline's effective BER.
+    #ber_factor: 10
+    # MER drop: MER at least mer_drop_db below the baseline median.
+    #mer_drop_db: 3
+    # Reports in a row needed to become degraded, and to clear.
+    #hysteresis_cycles: 3
+    # Decision trace, published as the correlation_trace metricset:
+    # input, skip, hysteresis, pair, ducting, sweep. [] turns it off.
+    trace:
+      categories: [input, skip, hysteresis, pair, ducting, sweep]
+      # Limit tracing to these LRF codes (empty = all). Use this with the
+      # input category, which records every report.
+      lrf_sites: ["TERH", "PROV", "BOS"]
 
 # ================================== General ===================================
 
@@ -301,25 +333,3 @@ processors:
 # This allows to enable 6.7 migration aliases
 #migration.6_to_7.enabled: true
 
-  # The correlation engine: judges each live demod report against its
-  # baseline, pairs the side A and B demods of each LRF and RF channel, and
-  # confirms co-channel interference (CCI) when both sides are degraded and
-  # a co-channel path on the channel is ducting. Runs only with rabbitmq
-  # enabled. See CORRELATION.md.
-  #correlator:
-    #enabled: true
-    # Publish verdicts as the correlation metricset.
-    #publish: true
-    # BER spike: BER at least ber_factor x the baseline's effective BER.
-    #ber_factor: 10
-    # MER drop: MER at least mer_drop_db below the baseline median.
-    #mer_drop_db: 3
-    # Reports in a row needed to become degraded, and to clear.
-    #hysteresis_cycles: 3
-    # Decision trace, published as the correlation_trace metricset:
-    # input, skip, hysteresis, pair, ducting, sweep. [] turns it off.
-    #trace:
-      #categories: [pair, hysteresis]
-      # Limit tracing to these LRF codes (empty = all). Use this with the
-      # input category, which records every report.
-      #lrf_sites: []
