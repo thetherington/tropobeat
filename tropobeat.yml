@@ -12,7 +12,7 @@ tropobeat:
   # Limit tropobeat to these LRF codes, for limited runs and testing. Only
   # these LRFs' co-channel paths are discovered and only their weather is
   # fetched. Empty or unset means all LRFs.
-  lrf_sites: ["TERH", "PROV", "BOS", "PIT", "WDC"]
+  lrf_sites: ["TERH", "PROV", "BOS", "PIT", "WDC", "IND"]
 
   # Elasticsearch cluster that tropobeat reads reference data from (the LRF
   # sites loaded with `tropobeat insert lrfcoordinates`). This is separate
@@ -78,8 +78,9 @@ tropobeat:
       # paths, to line ducting up with replayed test telemetry.
       sites:
         TERH: trapped
-        BOS: normal
         PROV: ducting
+        BOS: normal
+        IND: no_data
       # Fail every poll for fail_for at the start of every fail_every, so
       # the ducting results go stale. 0 = never.
       #fail_every: 0
@@ -168,7 +169,7 @@ tropobeat:
       categories: [input, skip, hysteresis, pair, ducting, sweep]
       # Limit tracing to these LRF codes (empty = all). Use this with the
       # input category, which records every report.
-      lrf_sites: ["TERH", "PROV", "BOS"]
+      lrf_sites: ["TERH", "PROV", "BOS", "IND"]
 
 # ================================== General ===================================
 

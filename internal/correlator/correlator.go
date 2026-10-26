@@ -947,7 +947,7 @@ func ductingReason(v verdict) (reason, msg string) {
 	default:
 		reason = "path_below_ducting"
 	}
-	strongest := fmt.Sprintf("strongest %s (%s, %.0f mi) is %s", s.PathID, s.CallSign, s.DistanceMi, s.State)
+	strongest := fmt.Sprintf("strongest %s (%s, %.0f mi) is %s", s.PathID, s.Name(), s.DistanceMi, s.State)
 	if !s.Known() {
 		strongest = "no path has usable weather"
 	}
@@ -979,7 +979,7 @@ func (e *Engine) pairMessage(p *pairState, v verdict, held bool, now time.Time) 
 	case "ducting_none_on_channel":
 		msg = fmt.Sprintf("both sides degraded, but none of the %d co-channel paths is ducting (strongest %s is %s)", len(v.ducting.Paths), v.strong.PathID, v.strong.State)
 	case "cci_confirmed":
-		msg = fmt.Sprintf("both sides degraded and %s (%s, %.0f mi) is %s: CCI confirmed", v.strong.PathID, v.strong.CallSign, v.strong.DistanceMi, v.strong.State)
+		msg = fmt.Sprintf("both sides degraded and %s (%s, %.0f mi) is %s: CCI confirmed", v.strong.PathID, v.strong.Name(), v.strong.DistanceMi, v.strong.State)
 	}
 	switch {
 	case held && v.sustained:

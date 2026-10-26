@@ -2,6 +2,8 @@ package cochannel
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 
 	"github.com/thetherington/tropobeat/internal/openmeteo"
 )
@@ -26,6 +28,30 @@ type Transmitter struct {
 	Service    string
 	ERPkW      *float64
 	Location   Point
+	// AntennaID is the FCC antenna record ID of this site, when known.
+	AntennaID string
+	// Site and Sites number a station's transmitter sites on this channel
+	// (distributed transmission): site Site of Sites, strongest first. Both
+	// are 1 for a station with a single site.
+	Site, Sites int
+}
+
+// MultiSite reports whether the station uses more than one transmitter site
+// on this channel.
+func (t Transmitter) MultiSite() bool { return t.Sites > 1 }
+
+// Label names the transmitter for people: the call sign, or for a station
+// with several sites, which site it is and its power, e.g.
+// "WVER site 2 of 4 (5 kW)".
+func (t Transmitter) Label() string {
+	if !t.MultiSite() {
+		return t.CallSign
+	}
+	l := fmt.Sprintf("%s site %d of %d", t.CallSign, t.Site, t.Sites)
+	if t.ERPkW != nil {
+		l += " (" + strconv.FormatFloat(math.Round(*t.ERPkW*100)/100, 'f', -1, 64) + " kW)"
+	}
+	return l
 }
 
 // Path is a co-channel path: an LRF, a same-channel transmitter within the
@@ -47,9 +73,17 @@ type Path struct {
 	BearingDeg float64
 }
 
-// ID identifies the path: "<lrf code>:<facility id>:<rf channel>".
+// ID identifies the path: "<lrf code>:<facility id>:<rf channel>", with
+// ":s<site>" appended when the station has several transmitter sites on the
+// channel (distributed transmission), e.g. "HART:69946:10:s2". The sites
+// share a facility ID and channel, so without the suffix their paths would
+// collide; single-site IDs keep the plain form.
 func (p Path) ID() string {
-	return fmt.Sprintf("%s:%s:%d", p.LRFCode, p.Transmitter.FacilityID, p.RFChannel)
+	id := fmt.Sprintf("%s:%s:%d", p.LRFCode, p.Transmitter.FacilityID, p.RFChannel)
+	if p.Transmitter.MultiSite() {
+		id += fmt.Sprintf(":s%d", p.Transmitter.Site)
+	}
+	return id
 }
 
 // Group returns the path as a weather group with its LRF, midpoint and

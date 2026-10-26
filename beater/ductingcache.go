@@ -20,6 +20,8 @@ type pathDucting struct {
 	// so the correlator can name the likely interferer.
 	CallSign   string
 	FacilityID string
+	// Label names the transmitter for people (see cochannel.Transmitter.Label).
+	Label      string
 	DistanceMi float64
 	// State is the path's ducting state (normal to trapping), as published
 	// on its weather event. Empty when no point of the path has usable
@@ -133,7 +135,7 @@ func (s *ductingStore) Channel(lrf string, rfChannel int, at time.Time) correlat
 	for _, p := range set.byChannel[demod.ChannelKey{LRF: lrf, RFChannel: rfChannel}] {
 		cd.ForecastTime = p.ForecastTime
 		ev := correlator.PathEvidence{
-			PathID: p.PathID, CallSign: p.CallSign, FacilityID: p.FacilityID,
+			PathID: p.PathID, CallSign: p.CallSign, FacilityID: p.FacilityID, Label: p.Label,
 			DistanceMi: p.DistanceMi, State: p.State,
 		}
 		for _, pt := range p.Points {
@@ -177,6 +179,7 @@ func pathDuctingFrom(groups []fetchedGroup, locs map[string]*location) []pathDuc
 			LRF:        demod.NormalizeLRF(fg.path.LRFCode),
 			RFChannel:  fg.path.RFChannel,
 			CallSign:   fg.path.Transmitter.CallSign,
+			Label:      fg.path.Transmitter.Label(),
 			FacilityID: fg.path.Transmitter.FacilityID,
 			DistanceMi: fg.path.DistanceMi,
 		}

@@ -32,6 +32,14 @@ func cochannelEvent(p cochannel.Path, runID string, at time.Time) beat.Event {
 	tx := mapstr.M{
 		"service":  p.Transmitter.Service,
 		"location": geoPoint(p.Transmitter.Location),
+		// Which of the station's transmitter sites this is (1 of 1 for most
+		// stations), and a readable name for dashboards.
+		"site":  p.Transmitter.Site,
+		"sites": p.Transmitter.Sites,
+		"label": p.Transmitter.Label(),
+	}
+	if p.Transmitter.AntennaID != "" {
+		tx["antenna_id"] = p.Transmitter.AntennaID
 	}
 	if p.Transmitter.ERPkW != nil {
 		tx["erp_kw"] = *p.Transmitter.ERPkW
@@ -345,6 +353,7 @@ type keys struct {
 	pathIDs          []string
 	rfChannels       []int
 	txCallSigns      []string
+	txLabels         []string
 	txFacilityIDs    []string
 	stationCallSigns []string
 	discoveryRunID   string
@@ -360,6 +369,7 @@ func (k *keys) addPath(p *cochannel.Path) {
 	k.pathIDs = append(k.pathIDs, p.ID())
 	k.rfChannels = append(k.rfChannels, p.RFChannel)
 	k.txCallSigns = append(k.txCallSigns, p.Transmitter.CallSign)
+	k.txLabels = append(k.txLabels, p.Transmitter.Label())
 	k.txFacilityIDs = append(k.txFacilityIDs, p.Transmitter.FacilityID)
 	k.stationCallSigns = append(k.stationCallSigns, p.LRFCallSigns...)
 }
@@ -377,6 +387,7 @@ func (k keys) fields() mapstr.M {
 	}
 	putList(m, "bands", bands)
 	putList(m, "transmitter_call_signs", k.txCallSigns)
+	putList(m, "transmitter_labels", k.txLabels)
 	putList(m, "transmitter_facility_ids", k.txFacilityIDs)
 	putList(m, "station_call_signs", k.stationCallSigns)
 	if k.discoveryRunID != "" {

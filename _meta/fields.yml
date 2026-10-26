@@ -50,6 +50,12 @@
       description: >
         FCC facility IDs of those transmitters. Stable when a call sign
         changes.
+    - name: tropobeat.transmitter_labels
+      type: keyword
+      description: >
+        Readable names of those transmitters: the call sign, or for a
+        station with several transmitter sites on the channel, which site,
+        e.g. "WVER site 2 of 4 (5 kW)".
     - name: tropobeat.station_call_signs
       type: keyword
       description: >
@@ -97,6 +103,23 @@
           fields:
             - name: service
               type: keyword
+            - name: site
+              type: integer
+              description: >
+                Which of the station's transmitter sites on this channel this
+                is, strongest first (1 for a single-site station).
+            - name: sites
+              type: integer
+              description: >
+                How many transmitter sites the station has on this channel
+                (more than 1 for a distributed transmission system).
+            - name: label
+              type: keyword
+              description: >
+                Readable name: the call sign, or e.g. "WVER site 2 of 4 (5 kW)".
+            - name: antenna_id
+              type: keyword
+              description: FCC antenna record ID of the site.
             - name: erp_kw
               type: float
               description: Effective radiated power, kW.
@@ -777,6 +800,11 @@
                   type: keyword
                   description: >
                     The likely interfering transmitter.
+                - name: label
+                  type: keyword
+                  description: >
+                    Its readable name, naming the site for multi-site
+                    stations, e.g. "WVER site 2 of 4 (5 kW)".
                 - name: facility_id
                   type: keyword
                 - name: distance_mi
@@ -802,6 +830,10 @@
               type: keyword
               description: >
                 Their transmitters.
+            - name: active_labels
+              type: keyword
+              description: >
+                Their transmitters' readable names (see strongest.label).
 
     - name: tropobeat.correlation_trace
       type: group
@@ -1261,6 +1293,11 @@
                   type: keyword
                   description: >
                     The likely interfering transmitter.
+                - name: label
+                  type: keyword
+                  description: >
+                    Its readable name, naming the site for multi-site
+                    stations, e.g. "WVER site 2 of 4 (5 kW)".
                 - name: facility_id
                   type: keyword
                 - name: distance_mi
@@ -1286,6 +1323,10 @@
               type: keyword
               description: >
                 Their transmitters.
+            - name: active_labels
+              type: keyword
+              description: >
+                Their transmitters' readable names (see strongest.label).
         - name: sweep
           type: group
           fields:

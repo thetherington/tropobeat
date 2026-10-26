@@ -72,9 +72,9 @@ All panels read the tropobeat indices. "Latest poll" means the most recent weath
 | **LRFs with a trapping duct** | LRFs where at least one path is trapping at the latest poll, with the number of paths polled | Dashboard |
 | **Paths ducting now** | Paths at level 2 or 3 at the latest poll, and their share of all paths | Dashboard |
 | **Selected LRF now** | The highest state at the latest poll, with counts of trapping and ducting paths. With no LRF picked it covers every LRF. | Dashboard |
-| **Worst path now** | The path with the highest state, then the highest index: transmitter, channel and LRF, with its state, index and distance | Dashboard |
-| **Map** | Paths that are **ducting or trapping** at the latest poll, with their midpoints and transmitters, coloured and sized by the path ducting index. Paths at normal or super-refractive are left off. Every LRF in view is shown. | Dashboard |
-| **Co-channel paths table** | Every path at the latest poll, worst first: LRF, transmitter, channel, band, distance, state, level, index, and the score at the LRF, midpoint and transmitter | Dashboard |
+| **Worst path now** | The path with the highest state, then the highest index: transmitter (its site label for a multi-site station), channel and LRF, with its state, index and distance | Dashboard |
+| **Map** | Paths that are **ducting or trapping** at the latest poll, with their midpoints and transmitters, coloured and sized by the path ducting index. Paths at normal or super-refractive are left off. Every LRF in view is shown. Hovering a path, midpoint or transmitter shows its path ID, call sign, site label, channel, state, level and index. | Dashboard |
+| **Co-channel paths table** | Every path at the latest poll, worst first: LRF, transmitter (its site label for a multi-site station), channel, band, distance, state, level, index, and the score at the LRF, midpoint and transmitter | Dashboard |
 | **Network heat map** | The highest ducting state of each LRF, hour by hour (top 20 LRFs). Each LRF is labelled with its site's city and state, for example `BOS · Andover, MA`. | Fixed: last 72 h |
 | **Path heat map** | The ducting state of each co-channel path, hour by hour (top 50 paths) | Fixed: last 72 h |
 | **Ducting reference** | States, gradient classes, the path index and trapping thickness, as a reminder | None |
@@ -100,7 +100,7 @@ One map of the **latest discovery run** in the time range (the last 7 days by de
 
 | Layer | Drawn as | Hover shows |
 |---|---|---|
-| **Co-channel paths** | Lines coloured by band: UHF teal, high VHF blue, low VHF pink | LRF, transmitter, FCC facility ID, RF channel, band, distance (mi), bearing (°), ERP (kW), service, the LRF's own stations, path ID, discovery run |
+| **Co-channel paths** | Lines coloured by band: UHF teal, high VHF blue, low VHF pink | LRF, transmitter, site (the call sign, or the site label for a multi-site station), FCC facility ID, RF channel, band, distance (mi), bearing (°), ERP (kW), service, the LRF's own stations, path ID, discovery run |
 | **Midpoints** | Small pale-grey dots | The same as the path |
 | **Transmitters** | Pink map markers; call signs from zoom level 7 | The same as the path |
 | **All LRFs** | Grey squares labelled with code, city and state, for example `BOS · Andover, MA` (as on the Ducting Watch network heat map) | Street, city, state, ZIP |
@@ -120,7 +120,7 @@ For checking and explaining the correlation engine: why a channel was or wasn't 
 
 | Panel | Shows |
 |---|---|
-| **Verdicts: latest event per LRF and channel** | The current verdict of every LRF and channel that has had one, worst first: the event kind, the reason, the strength (ducting or trapping), the likely interfering transmitter and its distance, each side's view, and how long the episode has lasted. |
+| **Verdicts: latest event per LRF and channel** | The current verdict of every LRF and channel that has had one, worst first: the event kind, the reason, the strength (ducting or trapping), the likely interfering transmitter (its site label for a multi-site station) and its distance, each side's view, and how long the episode has lasted. |
 | **Correlation reference** | The verdicts, the trace categories and decisions, and where to look when a channel didn't alert. |
 | **Verdict per LRF and channel** | A heat map of each LRF and channel's verdict over time, from 0 (clear) to 5 (cci_confirmed), with about 75 columns across the selected time range. Shows when episodes started, how long they lasted and how they changed. It is filled from the verdict events and the once-a-minute `pair` trace records, so with `pair` tracing turned off an open episode only shows every 5 minutes (its ongoing events). Pairs that stay clear don't appear. |
 | **Decision trace: reasons over time** | Trace records per minute, stacked by reason. A burst of one reason (for example `other_side_stale`) points straight at the cause. |

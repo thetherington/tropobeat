@@ -117,8 +117,8 @@ func (bt *tropobeat) runCochannel(ctx context.Context) error {
 	for _, r := range received {
 		lrfsWithChannels[r.LRFCode] = struct{}{}
 	}
-	bt.logger.Infof("Co-channel discovery %s: %d LRFs, %d with demod channels, %d channels searched, %d own-station transmitters excluded, %d co-channel paths published (%s)",
-		runID, len(selected), len(lrfsWithChannels), res.Channels, res.Excluded, len(res.Paths), time.Since(start).Round(time.Millisecond))
+	bt.logger.Infof("Co-channel discovery %s: %d LRFs, %d with demod channels, %d channels searched, %d own-station transmitters excluded, %d channel-sharing transmitters excluded, %d co-channel paths published (%s)",
+		runID, len(selected), len(lrfsWithChannels), res.Channels, res.Excluded, res.SharedSite, len(res.Paths), time.Since(start).Round(time.Millisecond))
 
 	// Demod IDs with no matching LRF site (likely missing from the LRF index).
 	if len(res.UnknownLRFs) > 0 {

@@ -15745,6 +15745,16 @@ type: keyword
 
 --
 
+*`tropobeat.transmitter_labels`*::
++
+--
+Readable names of those transmitters: the call sign, or for a station with several transmitter sites on the channel, which site, e.g. "WVER site 2 of 4 (5 kW)".
+
+
+type: keyword
+
+--
+
 *`tropobeat.station_call_signs`*::
 +
 --
@@ -15816,6 +15826,45 @@ type: geo_point
 *`tropobeat.cochannel.transmitter.service`*::
 +
 --
+type: keyword
+
+--
+
+*`tropobeat.cochannel.transmitter.site`*::
++
+--
+Which of the station's transmitter sites on this channel this is, strongest first (1 for a single-site station).
+
+
+type: integer
+
+--
+
+*`tropobeat.cochannel.transmitter.sites`*::
++
+--
+How many transmitter sites the station has on this channel (more than 1 for a distributed transmission system).
+
+
+type: integer
+
+--
+
+*`tropobeat.cochannel.transmitter.label`*::
++
+--
+Readable name: the call sign, or e.g. "WVER site 2 of 4 (5 kW)".
+
+
+type: keyword
+
+--
+
+*`tropobeat.cochannel.transmitter.antenna_id`*::
++
+--
+FCC antenna record ID of the site.
+
 type: keyword
 
 --
@@ -17566,6 +17615,16 @@ type: keyword
 
 --
 
+*`tropobeat.correlation.ducting.strongest.label`*::
++
+--
+Its readable name, naming the site for multi-site stations, e.g. "WVER site 2 of 4 (5 kW)".
+
+
+type: keyword
+
+--
+
 *`tropobeat.correlation.ducting.strongest.facility_id`*::
 +
 --
@@ -17624,6 +17683,16 @@ type: keyword
 +
 --
 Their transmitters.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation.ducting.active_labels`*::
++
+--
+Their transmitters' readable names (see strongest.label).
 
 
 type: keyword
@@ -18639,6 +18708,16 @@ type: keyword
 
 --
 
+*`tropobeat.correlation_trace.ducting.strongest.label`*::
++
+--
+Its readable name, naming the site for multi-site stations, e.g. "WVER site 2 of 4 (5 kW)".
+
+
+type: keyword
+
+--
+
 *`tropobeat.correlation_trace.ducting.strongest.facility_id`*::
 +
 --
@@ -18697,6 +18776,16 @@ type: keyword
 +
 --
 Their transmitters.
+
+
+type: keyword
+
+--
+
+*`tropobeat.correlation_trace.ducting.active_labels`*::
++
+--
+Their transmitters' readable names (see strongest.label).
 
 
 type: keyword

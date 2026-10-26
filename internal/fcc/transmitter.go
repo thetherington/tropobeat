@@ -40,7 +40,10 @@ type Transmitter struct {
 	// HAATm is the antenna height above average terrain in metres.
 	HAATm *float64
 	// RCAMSLm is the antenna radiation centre above mean sea level in metres.
-	RCAMSLm   *float64
+	RCAMSLm *float64
+	// AntennaID is the FCC's ID for the antenna record (one per transmitter
+	// site), used as a stable tie-break when numbering a station's sites.
+	AntennaID string
 	Latitude  float64
 	Longitude float64
 }
@@ -58,10 +61,13 @@ type Filter struct {
 	Services []string
 }
 
-// DefaultFilter keeps licensed full-power stations.
+// DefaultFilter keeps licensed full-power stations: main transmitters (DTV,
+// and the legacy TV and DT codes) and distributed transmission sites (DTS),
+// which some full-power stations use instead of, or as well as, a single
+// main transmitter.
 var DefaultFilter = Filter{
 	Statuses: []string{"LIC"},
-	Services: []string{"DTV", "TV", "DT"},
+	Services: []string{"DTV", "TV", "DT", "DTS"},
 }
 
 // Match reports whether t passes the filter.
@@ -94,6 +100,7 @@ const IndexBody = `{
       "erp_kw":          { "type": "float" },
       "haat_m":          { "type": "float" },
       "rcamsl_m":        { "type": "float" },
+      "antenna_id":      { "type": "keyword" },
       "location":        { "type": "geo_point" },
       "fetched_at":      { "type": "date" }
     }
@@ -123,6 +130,7 @@ type Document struct {
 	ERPkW          *float64  `json:"erp_kw,omitempty"`
 	HAATm          *float64  `json:"haat_m,omitempty"`
 	RCAMSLm        *float64  `json:"rcamsl_m,omitempty"`
+	AntennaID      string    `json:"antenna_id,omitempty"`
 	Location       GeoPoint  `json:"location"`
 	FetchedAt      time.Time `json:"fetched_at"`
 }
@@ -145,6 +153,7 @@ func (t Transmitter) Document(fetchedAt time.Time) Document {
 		ERPkW:          t.ERPkW,
 		HAATm:          t.HAATm,
 		RCAMSLm:        t.RCAMSLm,
+		AntennaID:      t.AntennaID,
 		Location:       GeoPoint{Lat: t.Latitude, Lon: t.Longitude},
 		FetchedAt:      fetchedAt,
 	}

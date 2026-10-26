@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 func loadRI(t *testing.T) []Transmitter {
@@ -198,3 +199,25 @@ func TestParseQuantity(t *testing.T) {
 }
 
 func ptr(v float64) *float64 { return &v }
+
+func TestParseTVQAntennaID(t *testing.T) {
+	w := find(loadRI(t), "WJAR", "LIC")
+	// The FCC's labelled page for WJAR: "Antenna ID No.: 25076f916e051f26016e13e252171c74".
+	if w.AntennaID != "25076f916e051f26016e13e252171c74" {
+		t.Errorf("WJAR antenna ID = %q", w.AntennaID)
+	}
+	if d := w.Document(time.Now()); d.AntennaID != w.AntennaID {
+		t.Errorf("document antenna_id = %q", d.AntennaID)
+	}
+}
+
+func TestDefaultFilterKeepsFullPowerAndDTS(t *testing.T) {
+	for svc, want := range map[string]bool{"DTV": true, "TV": true, "DT": true, "DTS": true, "DRT": false, "DCA": false, "LPD": false, "LPT": false} {
+		if got := DefaultFilter.Match(Transmitter{Status: "LIC", Service: svc}); got != want {
+			t.Errorf("licensed %s kept = %v, want %v", svc, got, want)
+		}
+	}
+	if DefaultFilter.Match(Transmitter{Status: "CP", Service: "DTS"}) {
+		t.Error("only licensed records are kept by default")
+	}
+}

@@ -18,6 +18,9 @@ import (
 // DefaultMaxOwnStationMiles is the default Options.MaxOwnStationMiles.
 const DefaultMaxOwnStationMiles = 150
 
+// DefaultSharedSiteMetres is the default Options.SharedSiteMetres.
+const DefaultSharedSiteMetres = 1000
+
 // maxHitsPerChannel bounds the transmitters returned per (LRF, channel)
 // search; a 200-mile radius holds far fewer on one channel.
 const maxHitsPerChannel = 1000
@@ -32,6 +35,11 @@ type Options struct {
 	// LRF. A matched own station further away than this suggests an LRF
 	// code or coordinate mismatch, and the channel is skipped.
 	MaxOwnStationMiles float64
+	// SharedSiteMetres is how close a transmitter on the same channel must
+	// be to one of the LRF's own-station sites to count as a channel-sharing
+	// partner (two stations broadcasting from one transmitter) rather than
+	// an interferer.
+	SharedSiteMetres float64
 }
 
 // Note records an (LRF, channel) that needs attention.
@@ -50,6 +58,10 @@ type Result struct {
 	Channels int
 	// Excluded is the number of transmitters excluded as LRFs' own stations.
 	Excluded int
+	// SharedSite is the number of transmitters excluded because they share
+	// the own station's site and channel (channel sharing): the same signal,
+	// not interference.
+	SharedSite int
 	// NotInFCC lists channels whose tagged call signs matched no
 	// transmitter in the index (LPTV, Class A, translators, foreign
 	// stations). Nothing is excluded for them.
@@ -70,6 +82,9 @@ type Result struct {
 func Discover(ctx context.Context, es *elasticsearch.Client, opts Options, lrfs []lrf.LRF, received []Received) (Result, error) {
 	if opts.MaxOwnStationMiles <= 0 {
 		opts.MaxOwnStationMiles = DefaultMaxOwnStationMiles
+	}
+	if opts.SharedSiteMetres <= 0 {
+		opts.SharedSiteMetres = DefaultSharedSiteMetres
 	}
 
 	// Index the LRFs by upper-cased code, to match the demod IDs, which
@@ -135,13 +150,16 @@ func Discover(ctx context.Context, es *elasticsearch.Client, opts Options, lrfs 
 	for _, d := range all {
 		byChannel[d.RFChannel] = append(byChannel[d.RFChannel], d)
 	}
+	// Number the sites of stations with several transmitters on a channel,
+	// so each site gets its own path ID and a readable label.
+	siteNums := numberSites(all)
 
 	// Pass 2: turn each channel's search hits into paths, and record any
 	// channel that needs attention.
 	for i, r := range todo {
 		res.Channels++
 		l := sites[r.LRFCode]
-		paths, note, excluded := channelPaths(l, r, hits[i], byChannel[r.RFChannel], opts.MaxOwnStationMiles)
+		paths, note, excluded, shared := channelPaths(l, r, hits[i], byChannel[r.RFChannel], siteNums, opts)
 		// A note with excluded == -1 means the channel was skipped (own
 		// station too far away), so it has no paths. A note otherwise means
 		// the own station wasn't in the FCC data: the paths are kept and the
@@ -154,6 +172,7 @@ func Discover(ctx context.Context, es *elasticsearch.Client, opts Options, lrfs 
 			res.NotInFCC = append(res.NotInFCC, *note)
 		}
 		res.Excluded += max(excluded, 0)
+		res.SharedSite += shared
 		res.Paths = append(res.Paths, paths...)
 	}
 
@@ -175,21 +194,26 @@ func Discover(ctx context.Context, es *elasticsearch.Client, opts Options, lrfs 
 // transmitter on the channel nationwide, used to find the own station even
 // when it is outside the radius. excluded is the number of own-station
 // transmitters removed, or -1 when the channel is skipped (own station too
-// far away).
-func channelPaths(l lrf.LRF, r Received, hits, sameChannel []fcc.Document, maxOwnMiles float64) (paths []Path, note *Note, excluded int) {
+// far away). shared is the number of transmitters removed because they
+// share an own-station site (channel sharing).
+func channelPaths(l lrf.LRF, r Received, hits, sameChannel []fcc.Document, siteNums map[string]site, opts Options) (paths []Path, note *Note, excluded, shared int) {
 	// Find the LRF's own station: the nearest transmitter on this channel,
 	// anywhere in the country, whose call sign is in the input's tag. A
 	// station can have several transmitters with the same call sign, so
-	// the nearest one is used. -1 means none was found.
+	// the nearest one is used. -1 means none was found. Every own-station
+	// site is kept for the channel-sharing check below.
 	nearestOwnM := -1.0
+	var ownSites []fcc.GeoPoint
 	for _, d := range sameChannel {
 		if !slices.Contains(r.CallSigns, baseCallSign(d.CallSign)) {
 			continue
 		}
+		ownSites = append(ownSites, d.Location)
 		if dist := Distance(l.Latitude, l.Longitude, d.Location.Lat, d.Location.Lon); nearestOwnM < 0 || dist < nearestOwnM {
 			nearestOwnM = dist
 		}
 	}
+	maxOwnMiles := opts.MaxOwnStationMiles
 
 	switch {
 	// No own station in the FCC data (LPTV, Class A, translator or a
@@ -203,14 +227,22 @@ func channelPaths(l lrf.LRF, r Received, hits, sameChannel []fcc.Document, maxOw
 	// wrong site would invent paths, so skip the channel.
 	case nearestOwnM/metresPerMile > maxOwnMiles:
 		return nil, &Note{LRFCode: r.LRFCode, RFChannel: r.RFChannel, Tags: r.Tags,
-			Detail: fmt.Sprintf("own station %s is %.0f mi away (limit %.0f); possible LRF code or coordinate mismatch", strings.Join(r.CallSigns, "/"), nearestOwnM/metresPerMile, maxOwnMiles)}, -1
+			Detail: fmt.Sprintf("own station %s is %.0f mi away (limit %.0f); possible LRF code or coordinate mismatch", strings.Join(r.CallSigns, "/"), nearestOwnM/metresPerMile, maxOwnMiles)}, -1, 0
 	}
 
 	// Every hit within the radius is a co-channel path, except the LRF's
-	// own station(s), which are counted and dropped.
+	// own station(s) and any station sharing an own-station site on this
+	// channel, which are counted and dropped. Channel-sharing stations (for
+	// example WSBE-TV and WRIW-CD on RF 2 at Providence) broadcast from the
+	// same transmitter, so they carry the LRF's own signal, not
+	// interference, but the tag names only one of them.
 	for _, h := range hits {
 		if slices.Contains(r.CallSigns, baseCallSign(h.CallSign)) {
 			excluded++
+			continue
+		}
+		if sharesSite(h.Location, ownSites, opts.SharedSiteMetres) {
+			shared++
 			continue
 		}
 		// Midpoint, distance and bearing on the WGS84 ellipsoid. The
@@ -228,13 +260,26 @@ func channelPaths(l lrf.LRF, r Received, hits, sameChannel []fcc.Document, maxOw
 				Service:    h.Service,
 				ERPkW:      h.ERPkW,
 				Location:   Point{Lat: loc.Lat, Lon: loc.Lon},
+				AntennaID:  h.AntennaID,
+				Site:       max(siteNums[siteKey(h)].n, 1),
+				Sites:      max(siteNums[siteKey(h)].of, 1),
 			},
 			Midpoint:   Point{Lat: midLat, Lon: midLon},
 			DistanceMi: distM / metresPerMile,
 			BearingDeg: bearing,
 		})
 	}
-	return paths, note, excluded
+	return paths, note, excluded, shared
+}
+
+// sharesSite reports whether p is within maxM metres of any of sites.
+func sharesSite(p fcc.GeoPoint, sites []fcc.GeoPoint, maxM float64) bool {
+	for _, s := range sites {
+		if Distance(p.Lat, p.Lon, s.Lat, s.Lon) <= maxM {
+			return true
+		}
+	}
+	return false
 }
 
 // channelQuery finds the transmitters on rf within radius of the LRF. For

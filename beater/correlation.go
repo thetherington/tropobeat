@@ -270,6 +270,7 @@ func ductingEvidenceFields(d correlator.DuctingEvidence) mapstr.M {
 		st := mapstr.M{
 			"path_id":     s.PathID,
 			"call_sign":   s.CallSign,
+			"label":       s.Name(),
 			"facility_id": s.FacilityID,
 			"distance_mi": s.DistanceMi,
 			"state":       string(s.State),
@@ -278,13 +279,15 @@ func ductingEvidenceFields(d correlator.DuctingEvidence) mapstr.M {
 		putList(st, "ducting_points", s.DuctingPoints)
 		m["strongest"] = st
 	}
-	var ids, calls []string
+	var ids, calls, labels []string
 	for _, p := range d.Active {
 		ids = append(ids, p.PathID)
 		calls = append(calls, p.CallSign)
+		labels = append(labels, p.Name())
 	}
 	putList(m, "active_path_ids", ids)
 	putList(m, "active_call_signs", calls)
+	putList(m, "active_labels", labels)
 	return m
 }
 
@@ -329,7 +332,7 @@ func logEvent(log *logp.Logger, ev correlator.Event) {
 	}
 	msg := fmt.Sprintf("Correlation %s RF %d: %s %s (%s)", ev.LRF, ev.RFChannel, ev.Kind, ev.State, ev.Reason)
 	if s := ev.Ducting.Strongest; s != nil && ev.State == correlator.StateCCIConfirmed {
-		msg += fmt.Sprintf("; likely interferer %s (%s, %.0f mi, %s)", s.CallSign, s.PathID, s.DistanceMi, s.State)
+		msg += fmt.Sprintf("; likely interferer %s (%s, %.0f mi, %s)", s.Name(), s.PathID, s.DistanceMi, s.State)
 	}
 	if ev.Kind == correlator.KindClear {
 		msg += fmt.Sprintf("; lasted %s, peak %s", ev.Duration.Round(time.Second), ev.Peak)

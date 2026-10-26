@@ -28,6 +28,7 @@ const (
 	colLicensee       = 26
 	colRCAMSL         = 30
 	colVirtualChannel = 37
+	colAntennaID      = 39 // optional: older or shorter rows may end before it
 
 	minColumns = colVirtualChannel + 1
 )
@@ -102,6 +103,9 @@ func parseRecord(cols []string) (Transmitter, bool) {
 	}
 	if v, err := strconv.Atoi(cols[colVirtualChannel]); err == nil {
 		t.VirtualChannel = &v
+	}
+	if len(cols) > colAntennaID {
+		t.AntennaID = dash(cols[colAntennaID])
 	}
 	return t, true
 }

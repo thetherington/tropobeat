@@ -66,8 +66,8 @@ See the [rolling plan](ROLLING_PLAN.md) for detailed status, open questions and 
 1. Re-reads the LRF list, so LRFs added or moved with `insert lrfcoordinates` are picked up without a restart.
 2. Reads the last 24 hours of demod telemetry and lists, for each LRF, the RF channels its locked demod inputs receive and the call signs in each input's tag (for example `WTHI / WTHI2 (OTA)` → WTHI, WTHI2).
 3. For each LRF and channel, finds every FCC transmitter on that channel within 200 miles (`cochannel.radius`).
-4. Excludes the LRF's **own station**: the transmitter whose call sign matches the input tag (ignoring suffixes such as `-TV`). If the tagged station isn't a full-power FCC station (LPTV, Class A, translators, Mexican stations), nothing is excluded. Inputs with no call sign (`Spare`, `NA`) are skipped. If the matched own station is more than 150 miles from the LRF, the channel is skipped with a warning, because that points to a wrong LRF code or coordinates.
-5. Calculates the WGS84 geodesic midpoint, distance (miles) and bearing of every remaining **co-channel path**.
+4. Excludes the LRF's **own station**: the transmitter whose call sign matches the input tag (ignoring suffixes such as `-TV`). If the tagged station isn't a full-power FCC station (LPTV, Class A, translators, Mexican stations), nothing is excluded. Inputs with no call sign (`Spare`, `NA`) are skipped. If the matched own station is more than 150 miles from the LRF, the channel is skipped with a warning, because that points to a wrong LRF code or coordinates. Stations that share the own station's transmitter (same channel, within 1 km, e.g. WSBE-TV and WRIW-CD at Providence) are excluded too, because they carry the same signal.
+5. Calculates the WGS84 geodesic midpoint, distance (miles) and bearing of every remaining **co-channel path**. A station that broadcasts from several sites on the channel (a distributed transmission system) gives one path per site. Its sites are numbered strongest first, the same at every LRF, and each gets its own path ID (`HART:69946:10:s2`) and a readable label (`WVER site 2 of 4 (5 kW)`). Single-site stations keep plain IDs (`<lrf>:<facility id>:<rf channel>`) and their call sign as the label.
 6. Keeps the paths in memory for the weather job and publishes one `cochannel` event per path.
 
 **The `weather` job** runs every `period` (default 1 hour). Its first run starts as soon as the first discovery run finishes. Each poll:
@@ -94,7 +94,7 @@ The weather job also keeps the latest ducting result of every co-channel path in
 1. Is the input stressed? A BER spike (10 × its effective baseline BER, or a saturated reading), an MER drop (3 dB below its median) or loss of lock, against **its own** baseline.
 2. Is it sustained? An input is *degraded* after 3 anomalous reports in a row and clears after 3 clean ones.
 3. Do sides A and B agree? They share one antenna feed, so both degraded means the received signal is bad, not one demod. A frame that goes entirely dark is never counted.
-4. Is a co-channel path on that channel ducting (dM/dh < 0, `ducting` or `trapping`) in the latest weather poll? Then the verdict is **`cci_confirmed`**, naming the strongest path's transmitter.
+4. Is a co-channel path on that channel ducting (dM/dh < 0, `ducting` or `trapping`) in the latest weather poll? Then the verdict is **`cci_confirmed`**, naming the strongest path's transmitter (by its label, so the site of a multi-site station is named).
 
 Each LRF and channel has one verdict (`clear`, `single_side`, `unpaired`, `dual_ducting_unknown`, `dual_unexplained` or `cci_confirmed`), published as `correlation` events when it starts, changes, every 5 minutes while it lasts, and when it clears. A decision trace (`correlation_trace`) records how each verdict was reached.
 
@@ -193,15 +193,15 @@ Downloads the FCC TV station listing (the FCC TV Query service), one request per
 # Load every state (about 52 requests, 1.5 s apart)
 ./tropobeat insert fcctransmitters
 
-# Include distributed-transmission sites and replacement translators
+# Add replacement translators to the default full-power set
 ./tropobeat insert fcctransmitters --services DTV,TV,DT,DTS,DRT
 ```
 
 | Flag | Default | Meaning |
 |---|---|---|
 | `--states` | 50 states, DC and PR | States and territories to fetch. |
-| `--services` | `DTV,TV,DT` | FCC service codes to keep. Others include `DTS` (distributed transmission sites), `DRT` (replacement translators), `DCA` (Class A), `LPD` (low power). |
-| `--statuses` | `LIC` | Record statuses to keep, e.g. `LIC,CP` to add construction permits. |
+| `--services` | `DTV,TV,DT,DTS` | FCC service codes to keep (comma-separated, case-insensitive). See [Service codes](#service-codes) below. `--services ""` keeps every code. |
+| `--statuses` | `LIC` | Record statuses to keep, e.g. `LIC,CP` to add construction permits. Statuses in the FCC listing include `LIC` (licensed), `CP` (construction permit), `APP` (application), `AMD` (amendment) and `STA` (special temporary authority). `--statuses ""` keeps every status. |
 | `-i`, `--index` | `fcc-transmitters` | Index to load into. If changed, set the same name in `tropobeat.fcc_index`. |
 | `--dry-run` | `false` | Fetch and print the transmitters without loading. |
 | `--recreate` | `false` | Delete and rebuild the index first. Avoid while tropobeat is running. |
@@ -210,9 +210,39 @@ Downloads the FCC TV station listing (the FCC TV Query service), one request per
 | `--timeout` | `30s` | Timeout for each FCC request. |
 | `--user-agent` | `tropobeat (FCC TV facility sync; …)` | User-Agent sent to the FCC. |
 
+#### Service codes
+
+The service codes in the FCC TV listing, with the FCC's own description and the number of **licensed** transmitters of each nationwide (50 states, DC and PR, checked 2026-10-26):
+
+| Code | FCC description | What it is | Licensed transmitters | In the default? |
+|---|---|---|---|---|
+| `DTV` | Digital Television (Full Service, single transmitter site) | A full-power TV station's main transmitter. | 1,734 | ✅ |
+| `DTS` | Digital Television (Distributed service, multiple transmitter sites) | One site of a full-power station that broadcasts from several transmitters on the same channel. Some full-power stations exist only as `DTS` sites. Each site becomes its own co-channel path, numbered strongest first (see [How it works](#3-how-it-works)). | 91 | ✅ |
+| `DRT` | Digital replacement translator | A low-power transmitter that fills gaps in a full-power station's coverage, under that station's call sign and facility ID but on a different channel. Some run 10–15 kW. | 115 | |
+| `DCA` | Digital Class A television station | A Class A station: low power, but with interference protection like a full-power station. Call signs usually end in `-CD`. | 390 | |
+| `LPD` | Digital Low Power television station | A low-power (LPTV) station. Call signs usually end in `-LD` or `-D`. | 2,173 | |
+| `LPT` | Digital TV Translator | A translator that rebroadcasts another station into a nearby area. Call signs usually end in `-D`. | 2,941 | |
+| `TV`, `DT` | (legacy codes) | Older full-power codes. They don't appear in the current listing and are kept in the default so older records would still match. | 0 | ✅ |
+
+Examples:
+
+```bash
+# Full power plus replacement translators
+./tropobeat insert fcctransmitters --services DTV,TV,DT,DTS,DRT
+
+# Add Class A stations (about 630 more co-channel paths; see the rolling plan, Q11 and Q15)
+./tropobeat insert fcctransmitters --services DTV,TV,DT,DTS,DCA
+
+# Preview everything the FCC lists, licensed or not
+./tropobeat insert fcctransmitters --services "" --statuses "" --dry-run
+```
+
+Adding service codes adds transmitters, and with them co-channel paths and weather points, so it raises Open-Meteo usage. Low-power and translator stations (`LPD`, `LPT`) are numerous: together they are more than three times the full-power count.
+
 How it behaves:
 
-- **Filtering.** By default only licensed full-power stations are kept, about 1,750 transmitters nationwide. Some full-power stations exist only as `DTS` sites and are left out unless `DTS` is added (see the rolling plan's known issues and Q11).
+- **Filtering.** By default only licensed full-power stations are kept: main transmitters and distributed-transmission (`DTS`) sites, about 1,830 transmitters nationwide. Each site's FCC antenna ID is stored as `antenna_id`.
+- **Existing indices.** When the index already exists, new fields added by a newer tropobeat (such as `antenna_id`) are added to its mapping automatically; `--recreate` is only needed to change an existing field.
 - **Updates and pruning.** Each transmitter's document ID is its facility ID plus location, so re-runs update it, and stations sharing a facility ID keep one document per site. After a **fully successful** run, transmitters that are no longer listed are deleted, but only within the states fetched in that run. A state that fails, or returns an empty listing, blocks pruning.
 - **Being a good client.** Requests identify tropobeat honestly, keep TLS certificate checks on, wait at least `--delay` between requests, and back off on "too many requests" or server errors (honouring `Retry-After`). If the FCC refuses a request (HTTP 403), the run stops rather than retrying.
 - **Exit code.** Non-zero if any state failed, so cron can report it.
@@ -480,7 +510,7 @@ Events go to tropobeat's output, by default the `tropobeat-<version>` data strea
 
 | Metricset | One event per | Main fields |
 |---|---|---|
-| `cochannel` | Co-channel path, per discovery run | `tropobeat.cochannel.lrf.location`, `transmitter.{service, erp_kw, location}`, `midpoint.location`, `distance_mi`, `bearing_deg`, `path` (the path as a line) |
+| `cochannel` | Co-channel path, per discovery run | `tropobeat.cochannel.lrf.location`, `transmitter.{service, erp_kw, location, site, sites, label, antenna_id}`, `midpoint.location`, `distance_mi`, `bearing_deg`, `path` (the path as a line) |
 | `weather` | Co-channel path (or LRF with no paths), per poll | `tropobeat.weather.path`; `lrf`/`midpoint`/`transmitter`, each with `location`, `elevation_m`, `surface` and `levels[]` (pressure, height, temperature, humidity) and a `ducting` summary; and the path's `ducting.{index, frequency_mhz, trapped}` |
 | `baseline` | Demod instance and RF channel, per baseline run | `tropobeat.baseline.run_id`, `instance.{id, host_ip, slot, input}`, `lrf.location`, `demod_side`, `card_label`, `frame_label`, `tags`, `status`, `samples`, `window.{start, end, days}`, `ber.{median, effective, spike_threshold}`, `mer.{median_db, drop_threshold_db}` |
 | `ducting` | Unique weather location, per poll | The full analysis: refractivity at every height, every layer's gradient and class, the ducts found, and the score and class. See [DUCTING.md](DUCTING.md#7-field-reference). |
@@ -492,7 +522,7 @@ Events go to tropobeat's output, by default the `tropobeat-<version>` data strea
 | Field | cochannel | weather | ducting | baseline |
 |---|---|---|---|---|
 | `lrf_codes` | the path's LRF | the path's LRF (or the LRF with no paths) | every LRF using the location | the input's LRF |
-| `path_ids` (`<lrf>:<facility id>:<rf channel>`), `rf_channels`, `bands`, `transmitter_call_signs`, `transmitter_facility_ids` | the path | the path | every path using the location | the co-channel paths on the input's LRF and channel: its possible interferers |
+| `path_ids` (`<lrf>:<facility id>:<rf channel>`, plus `:s<site>` for multi-site stations), `rf_channels`, `bands`, `transmitter_call_signs`, `transmitter_labels`, `transmitter_facility_ids` | the path | the path | every path using the location | the co-channel paths on the input's LRF and channel: its possible interferers |
 | `station_call_signs` | the LRF's own stations on the channel | same (paths only) | same, for every path | parsed from the input's tags |
 | `discovery_run_id` | ✓ | ✓ | ✓ | when it has paths |
 | `forecast_time` | | ✓ | ✓ | |

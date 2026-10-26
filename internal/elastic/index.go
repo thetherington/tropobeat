@@ -25,7 +25,10 @@ func EnsureIndex(ctx context.Context, client *elasticsearch.Client, index, body 
 	switch res.StatusCode {
 	case 200:
 		if !recreate {
-			return false, nil
+			// Add any fields new in body to the existing index, so a strict
+			// mapping created by an older version accepts them. Existing
+			// fields can't change type this way; use recreate for that.
+			return false, putMapping(ctx, client, index, body)
 		}
 		res, err := client.Indices.Delete([]string{index}, client.Indices.Delete.WithContext(ctx))
 		if err != nil {
@@ -160,4 +163,29 @@ func DeleteByQuery(ctx context.Context, client *elasticsearch.Client, index, que
 		return body.Deleted, fmt.Errorf("deleting from %s: %d failures, first: %s", index, len(body.Failures), body.Failures[0])
 	}
 	return body.Deleted, nil
+}
+
+// putMapping applies the "mappings" section of an index body to an existing
+// index. Elasticsearch merges it: new fields are added, existing ones must
+// keep their definition.
+func putMapping(ctx context.Context, client *elasticsearch.Client, index, body string) error {
+	var b struct {
+		Mappings json.RawMessage `json:"mappings"`
+	}
+	if err := json.Unmarshal([]byte(body), &b); err != nil {
+		return fmt.Errorf("decoding index body for %s: %w", index, err)
+	}
+	if len(b.Mappings) == 0 {
+		return nil
+	}
+	res, err := client.Indices.PutMapping([]string{index}, bytes.NewReader(b.Mappings),
+		client.Indices.PutMapping.WithContext(ctx))
+	if err != nil {
+		return fmt.Errorf("updating mapping of %s: %w", index, err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return fmt.Errorf("updating mapping of %s: %s", index, res.String())
+	}
+	return nil
 }

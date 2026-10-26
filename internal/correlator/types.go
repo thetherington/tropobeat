@@ -83,11 +83,22 @@ type PathEvidence struct {
 	PathID     string
 	CallSign   string
 	FacilityID string
+	// Label names the transmitter for people: the call sign, or which site
+	// of a multi-site station it is (e.g. "WVER site 2 of 4 (5 kW)").
+	Label      string
 	DistanceMi float64
 	State      ducting.State
 	// DuctingPoints are the labels (lrf, midpoint, transmitter) of the
 	// points with dM/dh < 0.
 	DuctingPoints []string
+}
+
+// Name is the transmitter's label, or its call sign when there is no label.
+func (p PathEvidence) Name() string {
+	if p.Label != "" {
+		return p.Label
+	}
+	return p.CallSign
 }
 
 // Known reports whether the path's ducting is known: empty State means no

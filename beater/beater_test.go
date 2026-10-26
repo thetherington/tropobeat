@@ -2,7 +2,9 @@ package beater
 
 import (
 	"context"
+	"github.com/thetherington/tropobeat/internal/correlator"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -492,5 +494,54 @@ func TestTagMock(t *testing.T) {
 	tagMock(events)
 	if tags, _ := events[0].Fields["tags"].([]string); len(tags) != 1 || tags[0] != "mock-weather" {
 		t.Errorf("tags = %v", events[0].Fields["tags"])
+	}
+}
+
+func TestCochannelEventMultiSite(t *testing.T) {
+	p := testPath()
+	erp := 5.0
+	p.Transmitter.ERPkW = &erp
+	p.Transmitter.Site, p.Transmitter.Sites, p.Transmitter.AntennaID = 2, 4, "ant-2"
+	ev := cochannelEvent(p, "run1", time.Now())
+
+	for k, want := range map[string]any{
+		"tropobeat.cochannel.transmitter.site":       2,
+		"tropobeat.cochannel.transmitter.sites":      4,
+		"tropobeat.cochannel.transmitter.label":      p.Transmitter.CallSign + " site 2 of 4 (5 kW)",
+		"tropobeat.cochannel.transmitter.antenna_id": "ant-2",
+	} {
+		if got := get(t, ev.Fields, k); got != want {
+			t.Errorf("%s = %v, want %v", k, got, want)
+		}
+	}
+	ids, _ := get(t, ev.Fields, "tropobeat.path_ids").([]string)
+	labels, _ := get(t, ev.Fields, "tropobeat.transmitter_labels").([]string)
+	if len(ids) != 1 || !strings.HasSuffix(ids[0], ":s2") || len(labels) != 1 || labels[0] != p.Transmitter.Label() {
+		t.Errorf("path_ids %v, transmitter_labels %v", ids, labels)
+	}
+}
+
+func TestCochannelEventSingleSiteLabelIsCallSign(t *testing.T) {
+	p := testPath()
+	p.Transmitter.Site, p.Transmitter.Sites = 1, 1
+	ev := cochannelEvent(p, "run1", time.Now())
+	if got := get(t, ev.Fields, "tropobeat.cochannel.transmitter.label"); got != p.Transmitter.CallSign {
+		t.Errorf("label = %v, want the call sign", got)
+	}
+	if ids, _ := get(t, ev.Fields, "tropobeat.path_ids").([]string); strings.Contains(ids[0], ":s") {
+		t.Errorf("single-site path ID %q should have no site suffix", ids[0])
+	}
+}
+
+func TestDuctingEvidenceLabels(t *testing.T) {
+	strong := correlator.PathEvidence{PathID: "HART:69946:10:s2", CallSign: "WVER", Label: "WVER site 2 of 4 (5 kW)", State: ducting.StateTrapping}
+	plain := correlator.PathEvidence{PathID: "BOS:1:20", CallSign: "WXYZ", State: ducting.StateDucting} // no label: falls back
+	m := ductingEvidenceFields(correlator.DuctingEvidence{Status: "fresh", Strongest: &strong, Active: []correlator.PathEvidence{strong, plain}})
+
+	if got := get(t, m, "strongest.label"); got != "WVER site 2 of 4 (5 kW)" {
+		t.Errorf("strongest.label = %v", got)
+	}
+	if got, _ := get(t, m, "active_labels").([]string); len(got) != 2 || got[1] != "WXYZ" {
+		t.Errorf("active_labels = %v", got)
 	}
 }
