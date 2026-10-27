@@ -97,6 +97,8 @@ steps:
 		"steps: [{duration: 1m, action: ber}]",
 		"steps: [{lrf: TERH, duration: 1m, action: ber, colour: red}]",
 		"repeat_every: 1m\nsteps: [{lrf: TERH, start: 1m, duration: 1m, action: ber}]",
+		"steps: [{lrf: TERH, start: 0s, action: ber}]", // no duration in a repeating scenario
+		"steps: [{lrf: TERH, start: 0s, duration: -1m, action: ber}]",
 	} {
 		if _, err := parseScenario([]byte(bad)); err == nil {
 			t.Errorf("accepted %q", bad)
@@ -125,7 +127,7 @@ func TestRewriterActions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		w := newRewriter(sc, false, stats)
+		w := newRewriter([]*Scenario{sc}, false, stats)
 		a, b := docs[0].clone(), docs[1].clone()
 		if !w.apply(a, time.Minute) || !w.apply(b, time.Minute) {
 			t.Fatalf("%s: report withheld", tc.action)
@@ -143,7 +145,7 @@ func TestRewriterActions(t *testing.T) {
 
 	// drop withholds; outside the step's window nothing changes.
 	sc, _ := parseScenario([]byte(`steps: [{lrf: TERH, start: 1m, duration: 1m, action: drop}]`))
-	w := newRewriter(sc, false, stats)
+	w := newRewriter([]*Scenario{sc}, false, stats)
 	if w.apply(docs[0].clone(), 90*time.Second) {
 		t.Error("drop step did not withhold")
 	}
@@ -153,7 +155,7 @@ func TestRewriterActions(t *testing.T) {
 
 	// flap 2 bad, 2 good.
 	sc, _ = parseScenario([]byte(`steps: [{lrf: TERH, side: A, start: 0s, duration: 20m, action: flap, bad: 2, good: 2}]`))
-	w = newRewriter(sc, false, stats)
+	w = newRewriter([]*Scenario{sc}, false, stats)
 	var got []bool
 	for i := 0; i < 6; i++ {
 		d := docs[0].clone()
@@ -165,11 +167,48 @@ func TestRewriterActions(t *testing.T) {
 	}
 }
 
+func TestStepWithoutDurationLastsUntilStopped(t *testing.T) {
+	sc, err := parseScenario([]byte("repeat_every: 0s\nsteps: [{lrf: PIT, rf: \"25\", start: 0s, action: ber}]"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, at := range []time.Duration{0, time.Hour, 30 * 24 * time.Hour} {
+		if idx, _ := sc.active(at); len(idx) != 1 {
+			t.Errorf("not active at %s", at)
+		}
+	}
+	if _, ok := sc.next(time.Hour); ok {
+		t.Error("a started run-once step reported as next")
+	}
+}
+
+func TestSeveralScenarios(t *testing.T) {
+	docs := sample(t)
+	stats := sampleStats(docs)
+	constant, _ := parseScenario([]byte("repeat_every: 0s\nsteps: [{lrf: PIT, start: 0s, action: ber}]"))
+	cycle, _ := parseScenario([]byte("steps: [{lrf: TERH, side: A, start: 1m, duration: 1m, action: mer}, {lrf: TERH, side: B, start: 1m, duration: 1m, action: ber}]"))
+	first, _ := parseScenario([]byte("steps: [{lrf: TERH, side: B, start: 0s, duration: 5m, action: unlock}]"))
+	w := newRewriter([]*Scenario{first, cycle, constant}, true, stats)
+
+	a, b := docs[0].clone(), docs[1].clone()
+	w.apply(a, 90*time.Second)
+	w.apply(b, 90*time.Second)
+	if a.int(fieldMER) != 27 {
+		t.Errorf("second scenario's step not applied: %v", a.demod)
+	}
+	if b.str(fieldStatus) != "Not Locked" || b.float(fieldBER) != 0 {
+		t.Errorf("first scenario's step should win: %v", b.demod)
+	}
+	if !w.scenarioLRF("PIT") || !w.scenarioLRF("TERH") || w.scenarioLRF("BOS") {
+		t.Error("quiet LRFs are not the union of the scenarios' LRFs")
+	}
+}
+
 func TestQuietMakesScenarioLRFsHealthy(t *testing.T) {
 	docs := sample(t)
 	stats := sampleStats(docs)
 	sc, _ := parseScenario([]byte(`steps: [{lrf: TERH, side: B, start: 10m, duration: 1m, action: ber}]`))
-	w := newRewriter(sc, true, stats)
+	w := newRewriter([]*Scenario{sc}, true, stats)
 	d := docs[0].clone()
 	d.set(fieldBER, 3e-4) // the sample's own spike
 	d.set(fieldMER, 25)
@@ -282,7 +321,7 @@ func TestReconnectSkipsOverdueReports(t *testing.T) {
 }
 
 func TestShippedScenariosParse(t *testing.T) {
-	for _, f := range []string{"scenarios/all-conditions.yml", "scenarios/demo.yml"} {
+	for _, f := range []string{"scenarios/all-conditions.yml", "scenarios/demo.yml", "scenarios/constant-trapping.yml"} {
 		sc, err := loadScenario(f)
 		if err != nil {
 			t.Errorf("%s: %v", f, err)

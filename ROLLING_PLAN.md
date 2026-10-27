@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Last updated | 2026-10-26 |
+| Last updated | 2026-10-27 |
 | Current phase | Phase 4b (correlation engine) built; Phase 4c (alerts and inSITE integration) next |
 | Platform | Evertz Magnum Analytics (inSITE), Elasticsearch, RabbitMQ, Open-Meteo API |
 
@@ -415,3 +415,4 @@ A correlation engine inside tropobeat that evaluates each demod report as it arr
 | 2026-10-21 | Phase 4b built: the correlation engine judges each live demod report against its baseline (BER spike, MER drop, lock loss), applies the 3-report hysteresis, pairs sides A and B, and confirms co-channel interference when a co-channel path on the channel is ducting, naming the likely interferer. Six verdicts per LRF and channel, published as the `correlation` metricset (with ongoing re-publishing and the LRF location), and a decision trace (`correlation_trace`) in categories that can be turned on separately. New **Correlation debug** dashboard and [CORRELATION.md](CORRELATION.md) specification. Replay scenarios and a looping demo mode, with per-LRF and failing mock weather. Paths without usable weather now count as ducting unknown. Verified end to end against a local broker and the test cluster: every verdict, both power signatures, the ongoing and clear events, flapping, gaps, the missing side label and a mid-run weather outage; the remaining rare reasons (no weather poll yet, a channel received on one side only, baselines not usable) are covered by automated tests. The runs also tightened how a side that is recovering is treated, so a frame coming back after an outage raises nothing new. Outage and frame-loss rules deferred; Q28 and Q29 added. |
 | 2026-10-26 | Co-channel discovery now excludes channel-sharing partners of the own station (same channel, within 1 km), removing 12 false paths. Measured the effect of adding Class A stations on paths and Open-Meteo usage (Q11, Q15). |
 | 2026-10-26 | Distributed-transmission (`DTS`) sites added to the default FCC import (76 more co-channel paths). Multi-site stations get one path per site, with site-numbered path IDs and readable transmitter labels on every result and in correlator messages. Existing indices receive new fields automatically. Dashboards show the site labels (Phase 7). |
+| 2026-10-27 | The replay tool can run several scenarios side by side, each on its own cycle, and a step can last for the whole replay. New scenario: a trapping CCI episode that never clears (PIT), to run next to the all-conditions or demo cycle. |

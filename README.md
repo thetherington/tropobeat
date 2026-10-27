@@ -324,14 +324,15 @@ With `period: 1m` and `cycle: 10m`, each site goes through every state in about 
 
 ### Testing the correlator and demos
 
-The replay tool can inject conditions into the demod sample on chosen LRFs, channels and sides at set times. Together with per-LRF mock weather, that reproduces every correlation verdict on purpose. Two scenarios are shipped in `tools/demodreplay/scenarios/`:
+The replay tool can inject conditions into the demod sample on chosen LRFs, channels and sides at set times. Together with per-LRF mock weather, that reproduces every correlation verdict on purpose. Three scenarios are shipped in `tools/demodreplay/scenarios/`:
 
 | Scenario | What it shows |
 |---|---|
 | `all-conditions.yml` | Every verdict, anomaly, hysteresis transition, guard and trace reason, one LRF and channel each, in about 45 minutes (repeats every 50) |
 | `demo.yml` | A 60-minute cycle of presentation-paced episodes: a trapping CCI episode, a ducting CCI episode, a fade that isn't CCI, a single-demod fault and a frame going dark |
+| `constant-trapping.yml` | One CCI episode with a trapping duct on PIT RF 25 that lasts as long as the replay runs (likely interferer WNUV, a two-site station). Meant to run next to one of the others |
 
-Both use the tropobeat settings in `scenarios/all-conditions.tropobeat.yml`: LRFs TERH, PROV, BOS and IND, 1-minute polls, mock weather per LRF (TERH trapping, PROV ducting, BOS normal, IND no data) and every trace category.
+All use the tropobeat settings in `scenarios/all-conditions.tropobeat.yml`: LRFs TERH, PROV, BOS, IND and PIT, 1-minute polls, mock weather per LRF (TERH and PIT trapping, PROV ducting, BOS normal, IND no data) and every trace category.
 
 ```bash
 # 1. tropobeat with the scenario settings merged into tropobeat.yml
@@ -342,7 +343,16 @@ Both use the tropobeat settings in `scenarios/all-conditions.tropobeat.yml`: LRF
 RABBITMQ_PASSWORD=… go run ./tools/demodreplay -declare -now -loop -quiet \
   -scenario tools/demodreplay/scenarios/all-conditions.yml \
   sample/log-metric-p-rfdemod-2026.10.13.tar.gz
+
+# several scenarios at once, each on its own cycle: all conditions plus a
+# trapping CCI episode that never clears
+RABBITMQ_PASSWORD=… go run ./tools/demodreplay -declare -now -loop -quiet \
+  -scenario tools/demodreplay/scenarios/all-conditions.yml \
+  -scenario tools/demodreplay/scenarios/constant-trapping.yml \
+  sample/log-metric-p-rfdemod-2026.10.13.tar.gz
 ```
+
+Run a single replay with several `-scenario` flags rather than two replays: each replay publishes the whole sample, so two would send every report twice. Where steps of two scenarios match the same report, the first scenario's step wins.
 
 The replay logs each step as it starts and ends, and a status line every minute, so the published verdicts can be checked against its timeline.
 
@@ -359,7 +369,7 @@ A step names an `lrf`, an `rf` channel (or `"*"` for every channel), a `side` (`
 | `noside` | The side label is blanked |
 | `flap` | `bad` BER spikes then `good` clean reports, repeating (default 2 and 2) |
 
-`repeat_every` restarts the scenario (default: 5 minutes after its last step ends; `0s` runs it once).
+`repeat_every` restarts the scenario (default: 5 minutes after its last step ends; `0s` runs it once). In a scenario that runs once, a step without a `duration` lasts until the replay stops.
 
 **Unattended demos.** With `-loop`, each pass of the 14-minute sample carries on from the previous pass's timestamps, so every input keeps reporting about once a minute across the join. If the broker connection drops, the replay reconnects by itself (waiting 1 s, doubling up to 30 s) and skips the reports that were due meanwhile rather than sending them in a burst. For a demo machine, run both under systemd, for example:
 

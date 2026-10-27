@@ -1,0 +1,28 @@
+# Constant CCI with a trapping duct, for as long as the replay runs: one
+# open episode (cci_confirmed, trapping) that never clears, with ongoing
+# events every 5 minutes. Run it on its own or next to another scenario,
+# each on its own cycle:
+#
+#   go run ./tools/demodreplay -declare -now -loop -quiet \
+#       -scenario tools/demodreplay/scenarios/all-conditions.yml \
+#       -scenario tools/demodreplay/scenarios/constant-trapping.yml \
+#       sample/log-metric-p-rfdemod-2026.10.13.tar.gz
+#
+# It uses PIT, which no other shipped scenario touches, so it never overlaps
+# their steps. Add PIT to the tropobeat settings (all-conditions.tropobeat.yml):
+# lrf_sites and openmeteo.mock.sites (PIT: trapped).
+#
+# PIT RF 25 has co-channel paths to WNUV (two sites, so the interferer is
+# named by its site label, e.g. "WNUV site 1 of 2 (750 kW)") and WSKA, and an
+# ok baseline on both sides (test cluster, 2026-10-27).
+
+repeat_every: 0s
+
+steps:
+  # No duration: lasts until the replay stops.
+  - name: constant-cci-trapping
+    lrf: PIT
+    rf: "25"
+    side: AB
+    start: 0s
+    action: ber

@@ -51,7 +51,8 @@ type Step struct {
 	// Side is A, B or AB (the default).
 	Side string `yaml:"side"`
 	// Start is the offset from the start of the scenario; Duration how
-	// long the step lasts.
+	// long the step lasts. Without a duration the step lasts until the
+	// replay stops, which needs a scenario that runs once.
 	Start    duration `yaml:"start"`
 	Duration duration `yaml:"duration"`
 	Action   string   `yaml:"action"`
@@ -98,6 +99,7 @@ func parseScenario(b []byte) (*Scenario, error) {
 	}
 	s.lrfs = map[string]bool{}
 	var end time.Duration
+	open := "" // the first step without a duration
 	for i := range s.Steps {
 		st := &s.Steps[i]
 		if st.Name == "" {
@@ -127,8 +129,11 @@ func parseScenario(b []byte) (*Scenario, error) {
 		if !slices.Contains(actions, st.Action) {
 			return nil, fmt.Errorf("scenario %s: action must be one of %s, got %q", st.Name, strings.Join(actions, ", "), st.Action)
 		}
-		if st.Duration <= 0 || st.Start < 0 {
-			return nil, fmt.Errorf("scenario %s: duration must be positive and start not negative", st.Name)
+		if st.Duration < 0 || st.Start < 0 {
+			return nil, fmt.Errorf("scenario %s: duration and start must not be negative", st.Name)
+		}
+		if st.Duration == 0 && open == "" {
+			open = st.Name
 		}
 		if st.Factor <= 0 {
 			st.Factor = 50
@@ -153,6 +158,9 @@ func parseScenario(b []byte) (*Scenario, error) {
 			return nil, fmt.Errorf("scenario: repeat_every %s is shorter than its last step's end (%s)", s.repeat, end)
 		}
 	}
+	if open != "" && s.repeat > 0 {
+		return nil, fmt.Errorf("scenario %s: a step without a duration needs repeat_every: 0s", open)
+	}
 	return &s, nil
 }
 
@@ -170,7 +178,7 @@ func (s *Scenario) at(t time.Duration) (offset time.Duration, rep int) {
 func (s *Scenario) active(t time.Duration) (idx []int, rep int) {
 	off, rep := s.at(t)
 	for i, st := range s.Steps {
-		if off >= time.Duration(st.Start) && off < time.Duration(st.Start+st.Duration) {
+		if off >= time.Duration(st.Start) && (st.Duration == 0 || off < time.Duration(st.Start+st.Duration)) {
 			idx = append(idx, i)
 		}
 	}
@@ -216,9 +224,11 @@ type inputStats struct {
 	lockedFrac  float64
 }
 
-// rewriter applies a scenario (and -quiet) to reports as they are replayed.
+// rewriter applies the scenarios (and -quiet) to reports as they are
+// replayed. When steps of several scenarios match a report, the first
+// scenario's step wins.
 type rewriter struct {
-	sc    *Scenario
+	scs   []*Scenario
 	quiet bool
 	stats map[string]inputStats
 	// flapN counts each input's reports within a flap step, per step and
@@ -226,34 +236,47 @@ type rewriter struct {
 	flapN map[string]int
 }
 
-func newRewriter(sc *Scenario, quiet bool, stats map[string]inputStats) *rewriter {
-	return &rewriter{sc: sc, quiet: quiet, stats: stats, flapN: map[string]int{}}
+func newRewriter(scs []*Scenario, quiet bool, stats map[string]inputStats) *rewriter {
+	return &rewriter{scs: scs, quiet: quiet, stats: stats, flapN: map[string]int{}}
+}
+
+// scenarioLRF reports whether any scenario has a step on lrf.
+func (w *rewriter) scenarioLRF(lrf string) bool {
+	for _, sc := range w.scs {
+		if sc.lrfs[lrf] {
+			return true
+		}
+	}
+	return false
 }
 
 // apply rewrites r for replay offset t. It returns false when the report
 // is to be withheld (a drop step).
 func (w *rewriter) apply(r *doc, t time.Duration) bool {
-	if w.sc == nil {
+	if len(w.scs) == 0 {
 		return true
 	}
-	idx, rep := w.sc.active(t)
 	var (
 		step  *Step
 		flapN int
 	)
-	for _, i := range idx {
-		if w.sc.Steps[i].matches(r) {
-			step = &w.sc.Steps[i]
-			if step.Action == actionFlap {
-				key := fmt.Sprintf("%d/%d/%s", i, rep, r.instance)
-				w.flapN[key]++
-				flapN = w.flapN[key]
+find:
+	for si, sc := range w.scs {
+		idx, rep := sc.active(t)
+		for _, i := range idx {
+			if sc.Steps[i].matches(r) {
+				step = &sc.Steps[i]
+				if step.Action == actionFlap {
+					key := fmt.Sprintf("%d/%d/%d/%s", si, i, rep, r.instance)
+					w.flapN[key]++
+					flapN = w.flapN[key]
+				}
+				break find
 			}
-			break
 		}
 	}
 	st := w.stats[r.instance]
-	if w.quiet && w.sc.lrfs[r.lrf] && st.lockedFrac > 0.5 {
+	if w.quiet && w.scenarioLRF(r.lrf) && st.lockedFrac > 0.5 {
 		// A normally locked input on a scenario LRF: healthy readings, so
 		// only the injections show.
 		r.set(fieldStatus, demod.StatusLocked)

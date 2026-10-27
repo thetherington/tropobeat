@@ -14,7 +14,10 @@
 // For the correlation engine, -scenario injects conditions (BER spikes, MER
 // drops, fades, lock loss, dropped reports, ...) on chosen LRFs, channels
 // and sides at set times, and -quiet makes those LRFs' own readings healthy
-// so only the injections show. -loop replays the sample endlessly, each pass
+// so only the injections show. -scenario can be given more than once to run
+// several scenarios side by side, each on its own cycle (for example
+// all-conditions.yml with constant-trapping.yml). -loop replays the sample
+// endlessly, each pass
 // continuing the timestamps of the last, for unattended demos:
 //
 //	go run ./tools/demodreplay -declare -now -loop -quiet \
@@ -66,9 +69,10 @@ func main() {
 		speed      = flag.Float64("speed", 1, "replay speed: 1 = real time, 10 = 10x faster, 0 = as fast as possible")
 		limit      = flag.Int("limit", 0, "publish at most this many reports (0 = all)")
 		loop       = flag.Bool("loop", false, "replay the sample endlessly, continuing the timestamps (needs -now)")
-		scenario   = flag.String("scenario", "", "scenario file of timed injections (see scenarios/)")
 		quiet      = flag.Bool("quiet", false, "with -scenario: healthy readings on the scenario's LRFs, so only injections show")
+		scenarios  stringList
 	)
+	flag.Var(&scenarios, "scenario", "scenario file of timed injections (see scenarios/); repeat it to run several scenarios at once")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: demodreplay [flags] <sample .tar.gz | -data.json file>\n")
 		flag.PrintDefaults()
@@ -92,20 +96,23 @@ func main() {
 	log.Printf("Loaded %d reports from %s (%s to %s)", len(docs), flag.Arg(0),
 		docs[0].at.Format(time.RFC3339), docs[len(docs)-1].at.Format(time.RFC3339))
 
-	var sc *Scenario
-	if *scenario != "" {
-		if sc, err = loadScenario(*scenario); err != nil {
-			log.Fatal(err)
+	var scs []*Scenario
+	for _, f := range scenarios {
+		sc, err := loadScenario(f)
+		if err != nil {
+			log.Fatalf("%s: %v", f, err)
 		}
 		repeat := "runs once"
 		if sc.repeat > 0 {
 			repeat = "repeats every " + sc.repeat.String()
 		}
-		log.Printf("Scenario %s: %d steps, %s", *scenario, len(sc.Steps), repeat)
-	} else if *quiet {
+		log.Printf("Scenario %s: %d steps, %s", f, len(sc.Steps), repeat)
+		scs = append(scs, sc)
+	}
+	if len(scs) == 0 && *quiet {
 		log.Fatal("-quiet needs -scenario")
 	}
-	rw := newRewriter(sc, *quiet, sampleStats(docs))
+	rw := newRewriter(scs, *quiet, sampleStats(docs))
 
 	uri := amqp.URI{Scheme: "amqp", Host: *host, Port: *port, Username: *user, Password: *password, Vhost: *vhost}
 	pub := &amqpPublisher{uri: uri.String(), exchange: *exchange, kind: *kind, key: *routingKey, declare: *declare}
@@ -122,6 +129,12 @@ func main() {
 		log.Fatal(err)
 	}
 }
+
+// stringList is a flag that can be given more than once.
+type stringList []string
+
+func (l *stringList) String() string     { return strings.Join(*l, ", ") }
+func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 
 // replayOptions are the replay flags.
 type replayOptions struct {
@@ -231,29 +244,34 @@ func (r *replayer) run(ctx context.Context, docs []*doc) error {
 
 // logSteps logs scenario steps starting and ending.
 func (r *replayer) logSteps(off time.Duration) {
-	sc := r.rw.sc
-	if sc == nil {
-		return
-	}
-	idx, rep := sc.active(off)
 	now := map[string]bool{}
-	for _, i := range idx {
-		st := sc.Steps[i]
-		key := fmt.Sprintf("%d/%d", i, rep)
-		now[key] = true
-		if !r.activeSteps[key] {
-			log.Printf("Scenario step started: %s (%s on %s RF %s side %s, for %s; repetition %d)",
-				st.Name, st.Action, st.LRF, rfLabel(st), st.Side, time.Duration(st.Duration), rep+1)
+	for si, sc := range r.rw.scs {
+		idx, rep := sc.active(off)
+		for _, i := range idx {
+			st := sc.Steps[i]
+			key := fmt.Sprintf("%d/%d/%d", si, i, rep)
+			now[key] = true
+			if !r.activeSteps[key] {
+				log.Printf("Scenario step started: %s (%s on %s RF %s side %s, for %s; repetition %d)",
+					st.Name, st.Action, st.LRF, rfLabel(st), st.Side, stepLength(st), rep+1)
+			}
 		}
 	}
 	for key := range r.activeSteps {
 		if !now[key] {
-			var i, rep int
-			fmt.Sscanf(key, "%d/%d", &i, &rep)
-			log.Printf("Scenario step ended: %s", sc.Steps[i].Name)
+			var si, i, rep int
+			fmt.Sscanf(key, "%d/%d/%d", &si, &i, &rep)
+			log.Printf("Scenario step ended: %s", r.rw.scs[si].Steps[i].Name)
 		}
 	}
 	r.activeSteps = now
+}
+
+func stepLength(st Step) string {
+	if st.Duration == 0 {
+		return "until stopped"
+	}
+	return time.Duration(st.Duration).String()
 }
 
 func rfLabel(st Step) string {
@@ -269,17 +287,26 @@ func (r *replayer) logStatus(pass int, off time.Duration, what string) {
 	r.lastStatus = r.now()
 	msg := fmt.Sprintf("%s: pass %d, %d published, %d skipped while disconnected, %d withheld by drop steps",
 		what, pass+1, r.published, r.skipped, r.withheld)
-	if sc := r.rw.sc; sc != nil {
-		idx, _ := sc.active(off)
-		var names []string
-		for _, i := range idx {
-			names = append(names, sc.Steps[i].Name)
+	if len(r.rw.scs) > 0 {
+		var (
+			names []string
+			next  time.Duration
+			ok    bool
+		)
+		for _, sc := range r.rw.scs {
+			idx, _ := sc.active(off)
+			for _, i := range idx {
+				names = append(names, sc.Steps[i].Name)
+			}
+			if d, has := sc.next(off); has && (!ok || d < next) {
+				next, ok = d, true
+			}
 		}
 		if len(names) == 0 {
 			names = []string{"none"}
 		}
 		msg += "; active steps: " + strings.Join(names, ", ")
-		if d, ok := sc.next(off); ok {
+		if d := next; ok {
 			if r.opts.speed > 0 {
 				d = time.Duration(float64(d) / r.opts.speed)
 			}

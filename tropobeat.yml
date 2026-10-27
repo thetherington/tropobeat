@@ -81,6 +81,7 @@ tropobeat:
         PROV: ducting
         BOS: normal
         IND: no_data
+        PIT: trapped
       # Fail every poll for fail_for at the start of every fail_every, so
       # the ducting results go stale. 0 = never.
       #fail_every: 0
