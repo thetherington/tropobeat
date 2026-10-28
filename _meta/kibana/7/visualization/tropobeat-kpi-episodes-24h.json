@@ -1,0 +1,24 @@
+{
+  "attributes": {
+    "description": "CCI operations KPI tile. Needs the Magnum Analytics Handlebars visualization.",
+    "kibanaSavedObjectMeta": {
+      "searchSourceJSON": "{\"query\": {\"language\": \"kuery\", \"query\": \"metricset.name : \\\"correlation\\\" and @timestamp >= \\\"now-24h\\\"\"}, \"filter\": [], \"indexRefName\": \"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
+    },
+    "title": "[Tropobeat] CCI KPI: episodes, 24 h",
+    "uiStateJSON": "{}",
+    "version": 1,
+    "visState": "{\"title\": \"[Tropobeat] CCI KPI: episodes, 24 h\", \"type\": \"handlebars\", \"aggs\": [{\"id\": \"1\", \"enabled\": true, \"type\": \"terms\", \"schema\": \"group\", \"params\": {\"field\": \"tropobeat.correlation.episode.id\", \"orderBy\": \"_key\", \"order\": \"asc\", \"size\": 2000, \"otherBucket\": false, \"otherBucketLabel\": \"Other\", \"missingBucket\": false, \"missingBucketLabel\": \"Missing\", \"includeIsRegex\": true, \"excludeIsRegex\": true, \"customLabel\": \"Episode\"}}, {\"id\": \"2\", \"enabled\": true, \"type\": \"top_hits\", \"schema\": \"metric\", \"params\": {\"field\": \"tropobeat.correlation.episode.peak_state\", \"aggregate\": \"concat\", \"size\": 1, \"sortField\": \"@timestamp\", \"sortOrder\": \"desc\", \"customLabel\": \"peak\"}}], \"params\": {\"html\": \"<style>\\n.htmlVis:has(.tbk)>div{height:100%}\\n.tbk{box-sizing:border-box;height:100%;min-height:118px;justify-content:center;background:#0F1F2C;border:1px solid #22384A;border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;color:#E4EDF3;font-family:\\\"Inter\\\",\\\"Segoe UI\\\",system-ui,sans-serif;position:relative;overflow:hidden}\\n.tbk-label{font:600 14px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.08em;color:#8DA2B2}\\n.tbk-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}\\n.tbk-big{font-family:\\\"Barlow Condensed\\\",\\\"Roboto Condensed\\\",\\\"Arial Narrow\\\",sans-serif;font-stretch:condensed;font-weight:700;font-size:52px;line-height:1}\\n.tbk-unit{font-size:14px;color:#C3D1DB}\\n.tbk-sub{font-size:13px;color:#8DA2B2}\\n.tbk-m,.tbk-l{position:absolute;width:0;height:0;overflow:hidden}\\n\\n.tbk4{counter-reset:k4cci}\\n.k4-m.p-cci_confirmed{counter-increment:k4cci}\\n.k4-cci::after{content:counter(k4cci)}\\n</style><div class=\\\"tbk tbk4\\\">{{#each metrics}}<i class=\\\"tbk-m k4-m p-{{metrics.0.value}}\\\"></i>{{/each}}<div class=\\\"tbk-label\\\">EPISODES, 24 H</div><div class=\\\"tbk-row\\\"><span class=\\\"tbk-big\\\">{{metrics.length}}</span><span class=\\\"tbk-unit\\\"><span class=\\\"k4-cci\\\"></span> reached CCI confirmed</span></div><div class=\\\"tbk-sub\\\">Every episode with an event in the last 24 hours</div></div>\", \"template\": \"{}\"}}"
+  },
+  "coreMigrationVersion": "8.8.0",
+  "id": "tropobeat-kpi-episodes-24h",
+  "managed": false,
+  "references": [
+    {
+      "id": "tropobeat-*",
+      "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
+      "type": "index-pattern"
+    }
+  ],
+  "type": "visualization",
+  "typeMigrationVersion": "8.5.0"
+}

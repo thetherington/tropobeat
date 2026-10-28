@@ -1,0 +1,24 @@
+{
+  "attributes": {
+    "description": "CCI operations KPI tile. Needs the Magnum Analytics Handlebars visualization.",
+    "kibanaSavedObjectMeta": {
+      "searchSourceJSON": "{\"query\": {\"language\": \"kuery\", \"query\": \"metricset.name : \\\"weather\\\" and @timestamp >= \\\"now-70m\\\"\"}, \"filter\": [], \"indexRefName\": \"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
+    },
+    "title": "[Tropobeat] CCI KPI: at risk",
+    "uiStateJSON": "{}",
+    "version": 1,
+    "visState": "{\"title\": \"[Tropobeat] CCI KPI: at risk\", \"type\": \"handlebars\", \"aggs\": [{\"id\": \"1\", \"enabled\": true, \"type\": \"terms\", \"schema\": \"group\", \"params\": {\"field\": \"tropobeat.lrf_codes\", \"orderBy\": \"_key\", \"order\": \"asc\", \"size\": 300, \"otherBucket\": false, \"otherBucketLabel\": \"Other\", \"missingBucket\": false, \"missingBucketLabel\": \"Missing\", \"includeIsRegex\": true, \"excludeIsRegex\": true, \"customLabel\": \"LRF\"}}, {\"id\": \"2\", \"enabled\": true, \"type\": \"terms\", \"schema\": \"group\", \"params\": {\"field\": \"tropobeat.path_ids\", \"orderBy\": \"_key\", \"order\": \"asc\", \"size\": 500, \"otherBucket\": false, \"otherBucketLabel\": \"Other\", \"missingBucket\": false, \"missingBucketLabel\": \"Missing\", \"includeIsRegex\": true, \"excludeIsRegex\": true, \"customLabel\": \"Path\"}}, {\"id\": \"3\", \"enabled\": true, \"type\": \"top_hits\", \"schema\": \"metric\", \"params\": {\"field\": \"tropobeat.ducting_state\", \"aggregate\": \"concat\", \"size\": 1, \"sortField\": \"@timestamp\", \"sortOrder\": \"desc\", \"customLabel\": \"ducting state\"}}], \"params\": {\"html\": \"<style>\\n.htmlVis:has(.tbk)>div{height:100%}\\n.tbk{box-sizing:border-box;height:100%;min-height:118px;justify-content:center;background:#0F1F2C;border:1px solid #22384A;border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;color:#E4EDF3;font-family:\\\"Inter\\\",\\\"Segoe UI\\\",system-ui,sans-serif;position:relative;overflow:hidden}\\n.tbk-label{font:600 14px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.08em;color:#8DA2B2}\\n.tbk-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}\\n.tbk-big{font-family:\\\"Barlow Condensed\\\",\\\"Roboto Condensed\\\",\\\"Arial Narrow\\\",sans-serif;font-stretch:condensed;font-weight:700;font-size:52px;line-height:1}\\n.tbk-unit{font-size:14px;color:#C3D1DB}\\n.tbk-sub{font-size:13px;color:#8DA2B2}\\n.tbk-m,.tbk-l{position:absolute;width:0;height:0;overflow:hidden}\\n\\n.tbk3{counter-reset:k3lrf k3duct k3all}\\n.tbk3 .tbk-label{color:#F2B84B}\\n.k3-m{counter-increment:k3all}\\n.k3-m.d-ducting,.k3-m.d-trapping{counter-increment:k3all k3duct}\\n.k3-l:has(.d-ducting,.d-trapping){counter-increment:k3lrf}\\n.k3-n::after{content:counter(k3lrf)}\\n.k3-duct::after{content:counter(k3duct)}\\n.k3-all::after{content:counter(k3all)}\\n</style><div class=\\\"tbk tbk3\\\">{{#each metrics}}<span class=\\\"tbk-l k3-l\\\">{{#each buckets}}<i class=\\\"tbk-m k3-m d-{{metrics.0.value}}\\\"></i>{{/each}}</span>{{/each}}<div class=\\\"tbk-label\\\">AT RISK</div><div class=\\\"tbk-row\\\"><span class=\\\"tbk-big k3-n\\\"></span><span class=\\\"tbk-unit\\\">LRFs with ducting paths</span></div><div class=\\\"tbk-sub\\\"><span class=\\\"k3-duct\\\"></span> of <span class=\\\"k3-all\\\"></span> paths ducting or trapping</div></div>\", \"template\": \"{}\"}}"
+  },
+  "coreMigrationVersion": "8.8.0",
+  "id": "tropobeat-kpi-at-risk",
+  "managed": false,
+  "references": [
+    {
+      "id": "tropobeat-*",
+      "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
+      "type": "index-pattern"
+    }
+  ],
+  "type": "visualization",
+  "typeMigrationVersion": "8.5.0"
+}

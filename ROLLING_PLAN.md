@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Last updated | 2026-10-27 |
+| Last updated | 2026-10-28 |
 | Current phase | Phase 4b (correlation engine) built; Phase 4c (alerts and inSITE integration) next |
 | Platform | Evertz Magnum Analytics (inSITE), Elasticsearch, RabbitMQ, Open-Meteo API |
 
@@ -240,7 +240,8 @@ A correlation engine inside tropobeat that evaluates each demod report as it arr
 | Map of LRFs, transmitters and co-channel paths | 📋 | The Ducting Watch map draws only the co-channel paths that are ducting or trapping at the latest poll, with their midpoints and transmitters, coloured and sized by the path ducting index; every LRF is shown. Still to do: colour by ducting state with trapping paths emphasised, and LRFs coloured by their highest current state. |
 | Site labels on dashboards | ✅ | The readable transmitter label (e.g. "WVER site 2 of 4 (5 kW)") replaces the bare call sign in the Ducting Watch path table and "worst path" tile, the map tooltips of both dashboards, Correlation debug and the CCI operations preview (cards, likely-interferer path and station), so the sites of a multi-site station can be told apart. Single-site stations still show their call sign, and results written before the labels existed fall back to it. Map markers keep the short call sign. The 7-day top-interferers chart stays ranked by station. Checked on the test cluster; hand-built dashboards there received drafts for review. |
 | Co-channel verification dashboard | ✅ | **Co-channel paths**, a second dashboard that ships with tropobeat, to check that discovery has run. One map of the latest discovery run, with an LRF picker: every co-channel path coloured by band, its midpoint and transmitter, and every LRF labelled with its code, city and state, as on the Ducting Watch heat map. Hovering a path shows its LRF, transmitter, facility ID, channel, band, distance, bearing, ERP, service, the LRF's own stations and the discovery run; hovering an LRF shows how many paths and channels it has. An LRF without paths stands out as a plain grey square. See [DASHBOARD.md](DASHBOARD.md). |
-| Event timeline and correlation dashboard | 📋 | Telemetry overlaid with the ducting index for each event. The Correlation debug dashboard (Phase 4b) covers checking the engine; this is the operator-facing view. |
+| Event timeline and correlation dashboard | ✅ | **Episode timeline** ships with tropobeat: pick an episode from the last 30 days (open episodes pinned at the top) and see, on one time axis, each side's readings against their thresholds, when each side became degraded, stressed or recovered, a frame going down, the ducting the correlator found and the weather polls around it, and every decision it made, followed by the full decision log. The per-report detail needs the input trace turned on for the LRFs of interest; otherwise it shows the readings from the episode's events. |
+| CCI operations dashboard | ✅ | **CCI operations** ships with tropobeat for the operators: headline figures, a map of open episodes with each likely interferer's path and station, a card per open episode led by the station's call sign, ducting and episodes by hour, episodes by region (US time zones or ducting climate), verdicts by LRF hour by hour, the top likely interferers, episodes per day and data health. Times are in local time. Its headline figures and cards use the Magnum Analytics Handlebars visualization in inSITE's Kibana. |
 
 ### Phase 8: Hardening & deployment 📋
 
@@ -416,3 +417,4 @@ A correlation engine inside tropobeat that evaluates each demod report as it arr
 | 2026-10-26 | Co-channel discovery now excludes channel-sharing partners of the own station (same channel, within 1 km), removing 12 false paths. Measured the effect of adding Class A stations on paths and Open-Meteo usage (Q11, Q15). |
 | 2026-10-26 | Distributed-transmission (`DTS`) sites added to the default FCC import (76 more co-channel paths). Multi-site stations get one path per site, with site-numbered path IDs and readable transmitter labels on every result and in correlator messages. Existing indices receive new fields automatically. Dashboards show the site labels (Phase 7). |
 | 2026-10-27 | The replay tool can run several scenarios side by side, each on its own cycle, and a step can last for the whole replay. New scenario: a trapping CCI episode that never clears (PIT), to run next to the all-conditions or demo cycle. |
+| 2026-10-28 | Two new dashboards ship with tropobeat and load with its standard dashboard setup: **CCI operations** for watching interference across the network, and **Episode timeline** for explaining how each episode was formed. Channels are named by their station's call sign throughout. |

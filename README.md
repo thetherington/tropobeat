@@ -49,6 +49,8 @@ Tropobeat's goal is to move operations from reactive troubleshooting to proactiv
 | **Ducting Watch** Kibana dashboard: headline figures, map, network and per-path heat maps, duct detail ([DASHBOARD.md](DASHBOARD.md)) | ✅ |
 | **Co-channel paths** Kibana dashboard: every co-channel path from the latest discovery run on one map, to check discovery ([DASHBOARD.md](DASHBOARD.md)) | ✅ |
 | **Correlation debug** Kibana dashboard: latest verdicts, verdicts over time, decision-trace reasons, pair decisions with explanations, MER and BER against thresholds ([DASHBOARD.md](DASHBOARD.md#4-correlation-debug)) | ✅ |
+| **CCI operations** Kibana dashboard: headline figures, a map of open episodes with each likely interferer's path and station, open-episode cards, trends, episodes by region, verdicts by LRF, top interferers and data health ([DASHBOARD.md](DASHBOARD.md#5-cci-operations)) | ✅ |
+| **Episode timeline** Kibana dashboard: pick an episode and see its telemetry, hysteresis, ducting, weather polls and pair decisions on one time axis ([DASHBOARD.md](DASHBOARD.md#6-episode-timeline)) | ✅ |
 | Forecasting at-risk LRFs, alerting, the event timeline dashboard | 📋 planned (Phases 6–7) |
 
 See the [rolling plan](ROLLING_PLAN.md) for detailed status, open questions and decisions.
@@ -276,7 +278,7 @@ ES_PASSWORD=…
 
 At start-up tropobeat checks the LRF list and stops with a clear message if the cluster is unreachable or the index is missing or empty.
 
-**Dashboards.** Load the Ducting Watch, Co-channel paths and Correlation debug dashboards into Kibana once `setup.kibana` is set: `./tropobeat setup --dashboards -e` (from a source checkout, add `-E setup.dashboards.directory=_meta/kibana`). See [DASHBOARD.md](DASHBOARD.md).
+**Dashboards.** Load the Ducting Watch, Co-channel paths, Correlation debug, CCI operations and Episode timeline dashboards into Kibana once `setup.kibana` is set: `./tropobeat setup --dashboards -e` (from a source checkout, add `-E setup.dashboards.directory=_meta/kibana`). See [DASHBOARD.md](DASHBOARD.md).
 
 **Useful one-off overrides** (`-E` overrides any setting):
 
@@ -632,5 +634,5 @@ RABBITMQ_PASSWORD=… go run ./tools/demodreplay -declare -now -speed 10 \
 | [ROLLING_PLAN.md](ROLLING_PLAN.md) | Phases and status, open questions, decisions, known issues, change log |
 | [DUCTING.md](DUCTING.md) | How the ducting calculation works, classes and scores, field reference, reading the results, Kibana Maps setup |
 | [CORRELATION.md](CORRELATION.md) | How co-channel interference is detected: the per-input rules, A/B pairing, the ducting evidence, the verdicts, the decision trace, settings and fields |
-| [DASHBOARD.md](DASHBOARD.md) | The Ducting Watch, Co-channel paths and Correlation debug dashboards: installing, panels, using them, colours, changing them |
+| [DASHBOARD.md](DASHBOARD.md) | The Ducting Watch, Co-channel paths, Correlation debug, CCI operations and Episode timeline dashboards: installing, panels, using them, colours, changing them |
 | `tropobeat.reference.yml` | Every setting, with comments |

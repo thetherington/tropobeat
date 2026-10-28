@@ -1,0 +1,41 @@
+{
+  "attributes": {
+    "description": "Pick an episode in the list to see how it was made: telemetry, hysteresis, ducting and pair decisions on one time axis, then every decision in order.",
+    "kibanaSavedObjectMeta": {
+      "searchSourceJSON": "{\"query\": {\"query\": \"\", \"language\": \"kuery\"}, \"filter\": []}"
+    },
+    "optionsJSON": "{\"useMargins\": true, \"syncColors\": false, \"hidePanelTitles\": false}",
+    "panelsJSON": "[{\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 0, \"y\": 0, \"w\": 48, \"h\": 18, \"i\": \"list\"}, \"panelIndex\": \"list\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_list\"}, {\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 0, \"y\": 18, \"w\": 48, \"h\": 25, \"i\": \"lanes\"}, \"panelIndex\": \"lanes\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_lanes\"}, {\"version\": \"8.9.0\", \"type\": \"search\", \"gridData\": {\"x\": 0, \"y\": 43, \"w\": 48, \"h\": 20, \"i\": \"log\"}, \"panelIndex\": \"log\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": false}, \"panelRefName\": \"panel_log\"}]",
+    "refreshInterval": {
+      "pause": true,
+      "value": 60000
+    },
+    "timeFrom": "now-24h",
+    "timeRestore": true,
+    "timeTo": "now",
+    "title": "[Tropobeat] Episode timeline",
+    "version": 1
+  },
+  "coreMigrationVersion": "8.8.0",
+  "id": "tropobeat-episode-timeline",
+  "managed": false,
+  "references": [
+    {
+      "id": "tropobeat-episode-list",
+      "name": "panel_list",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-episode-timeline-lanes",
+      "name": "panel_lanes",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-episode-decision-log",
+      "name": "panel_log",
+      "type": "search"
+    }
+  ],
+  "type": "dashboard",
+  "typeMigrationVersion": "10.3.0"
+}

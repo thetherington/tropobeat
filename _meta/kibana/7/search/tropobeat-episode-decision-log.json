@@ -1,0 +1,70 @@
+{
+  "attributes": {
+    "columns": [
+      "tropobeat.correlation_trace.category",
+      "tropobeat.correlation_trace.input.side",
+      "tropobeat.correlation_trace.decision",
+      "tropobeat.correlation_trace.reason",
+      "tropobeat.correlation.kind",
+      "tropobeat.correlation.state",
+      "tropobeat.correlation_trace.message"
+    ],
+    "description": "Correlation events and decision trace records, oldest first.",
+    "grid": {},
+    "hideChart": true,
+    "isTextBasedQuery": false,
+    "kibanaSavedObjectMeta": {
+      "searchSourceJSON": "{\"query\": {\"query\": \"metricset.name : \\\"correlation\\\" or (metricset.name : \\\"correlation_trace\\\" and not tropobeat.correlation_trace.category : (\\\"sweep\\\" or \\\"skip\\\"))\", \"language\": \"kuery\"}, \"filter\": [], \"indexRefName\": \"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
+    },
+    "sort": [
+      [
+        "@timestamp",
+        "asc"
+      ]
+    ],
+    "tabs": [
+      {
+        "attributes": {
+          "columns": [
+            "tropobeat.correlation_trace.category",
+            "tropobeat.correlation_trace.input.side",
+            "tropobeat.correlation_trace.decision",
+            "tropobeat.correlation_trace.reason",
+            "tropobeat.correlation.kind",
+            "tropobeat.correlation.state",
+            "tropobeat.correlation_trace.message"
+          ],
+          "grid": {},
+          "hideChart": true,
+          "isTextBasedQuery": false,
+          "kibanaSavedObjectMeta": {
+            "searchSourceJSON": "{\"query\": {\"query\": \"metricset.name : \\\"correlation\\\" or (metricset.name : \\\"correlation_trace\\\" and not tropobeat.correlation_trace.category : (\\\"sweep\\\" or \\\"skip\\\"))\", \"language\": \"kuery\"}, \"filter\": [], \"indexRefName\": \"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
+          },
+          "sort": [
+            [
+              "@timestamp",
+              "asc"
+            ]
+          ],
+          "timeRestore": false
+        },
+        "id": "8521748e-7cad-464d-81c8-533d35542fec",
+        "label": "Untitled"
+      }
+    ],
+    "timeRestore": false,
+    "title": "[Tropobeat] Episode decision log"
+  },
+  "coreMigrationVersion": "8.8.0",
+  "id": "tropobeat-episode-decision-log",
+  "managed": false,
+  "references": [
+    {
+      "id": "tropobeat-*",
+      "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
+      "type": "index-pattern"
+    }
+  ],
+  "type": "search",
+  "typeMigrationVersion": "10.12.0"
+}

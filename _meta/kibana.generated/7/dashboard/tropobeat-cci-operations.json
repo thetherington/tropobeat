@@ -1,0 +1,96 @@
+{
+  "attributes": {
+    "description": "Correlation (CCI) at a glance: KPIs, a map of open episodes and likely interferers, open-episode cards, trends, verdicts by LRF and data health. The KPI tiles and cards need the Magnum Analytics Handlebars visualization.",
+    "kibanaSavedObjectMeta": {
+      "searchSourceJSON": "{\"query\": {\"query\": \"\", \"language\": \"kuery\"}, \"filter\": []}"
+    },
+    "optionsJSON": "{\"useMargins\": true, \"syncColors\": false, \"hidePanelTitles\": true}",
+    "panelsJSON": "[{\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 0, \"y\": 0, \"w\": 8, \"h\": 6, \"i\": \"k1\"}, \"panelIndex\": \"k1\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_k1\"}, {\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 8, \"y\": 0, \"w\": 8, \"h\": 6, \"i\": \"k2\"}, \"panelIndex\": \"k2\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_k2\"}, {\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 16, \"y\": 0, \"w\": 8, \"h\": 6, \"i\": \"k3\"}, \"panelIndex\": \"k3\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_k3\"}, {\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 24, \"y\": 0, \"w\": 8, \"h\": 6, \"i\": \"k4\"}, \"panelIndex\": \"k4\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_k4\"}, {\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 32, \"y\": 0, \"w\": 8, \"h\": 6, \"i\": \"k5\"}, \"panelIndex\": \"k5\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_k5\"}, {\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 40, \"y\": 0, \"w\": 8, \"h\": 6, \"i\": \"k6\"}, \"panelIndex\": \"k6\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_k6\"}, {\"version\": \"8.9.0\", \"type\": \"map\", \"gridData\": {\"x\": 0, \"y\": 6, \"w\": 30, \"h\": 26, \"i\": \"map\"}, \"panelIndex\": \"map\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true, \"isLayerTOCOpen\": false, \"hiddenLayers\": [], \"mapCenter\": {\"lat\": 40.0666, \"lon\": -81.83161, \"zoom\": 5.2}, \"openTOCDetails\": []}, \"panelRefName\": \"panel_map\"}, {\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 30, \"y\": 6, \"w\": 18, \"h\": 26, \"i\": \"deck\"}, \"panelIndex\": \"deck\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_deck\"}, {\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 0, \"y\": 32, \"w\": 32, \"h\": 12, \"i\": \"trends\"}, \"panelIndex\": \"trends\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_trends\"}, {\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 32, \"y\": 32, \"w\": 16, \"h\": 12, \"i\": \"regions\"}, \"panelIndex\": \"regions\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_regions\"}, {\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 0, \"y\": 44, \"w\": 48, \"h\": 14, \"i\": \"heat\"}, \"panelIndex\": \"heat\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_heat\"}, {\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 0, \"y\": 58, \"w\": 16, \"h\": 14, \"i\": \"inter\"}, \"panelIndex\": \"inter\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_inter\"}, {\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 16, \"y\": 58, \"w\": 16, \"h\": 14, \"i\": \"days\"}, \"panelIndex\": \"days\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_days\"}, {\"version\": \"8.9.0\", \"type\": \"visualization\", \"gridData\": {\"x\": 32, \"y\": 58, \"w\": 16, \"h\": 14, \"i\": \"health\"}, \"panelIndex\": \"health\", \"embeddableConfig\": {\"enhancements\": {}, \"hidePanelTitles\": true}, \"panelRefName\": \"panel_health\"}]",
+    "refreshInterval": {
+      "pause": false,
+      "value": 60000
+    },
+    "timeFrom": "now-24h",
+    "timeRestore": true,
+    "timeTo": "now",
+    "title": "[Tropobeat] CCI operations",
+    "version": 1
+  },
+  "coreMigrationVersion": "8.8.0",
+  "id": "tropobeat-cci-operations",
+  "managed": false,
+  "references": [
+    {
+      "id": "tropobeat-kpi-active-cci",
+      "name": "panel_k1",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-kpi-needs-a-look",
+      "name": "panel_k2",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-kpi-at-risk",
+      "name": "panel_k3",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-kpi-episodes-24h",
+      "name": "panel_k4",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-kpi-median-duration",
+      "name": "panel_k5",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-kpi-weather",
+      "name": "panel_k6",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-cci-operations-map",
+      "name": "panel_map",
+      "type": "map"
+    },
+    {
+      "id": "tropobeat-cci-open-episodes",
+      "name": "panel_deck",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-ops-trends",
+      "name": "panel_trends",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-ops-episodes-by-region",
+      "name": "panel_regions",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-ops-verdict-heatmap",
+      "name": "panel_heat",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-ops-top-interferers",
+      "name": "panel_inter",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-ops-episodes-per-day",
+      "name": "panel_days",
+      "type": "visualization"
+    },
+    {
+      "id": "tropobeat-ops-data-health",
+      "name": "panel_health",
+      "type": "visualization"
+    }
+  ],
+  "type": "dashboard",
+  "typeMigrationVersion": "10.3.0"
+}

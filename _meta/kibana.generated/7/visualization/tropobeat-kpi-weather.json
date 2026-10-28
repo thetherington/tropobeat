@@ -1,0 +1,24 @@
+{
+  "attributes": {
+    "description": "CCI operations KPI tile. Needs the Magnum Analytics Handlebars visualization.",
+    "kibanaSavedObjectMeta": {
+      "searchSourceJSON": "{\"query\": {\"language\": \"kuery\", \"query\": \"metricset.name : \\\"weather\\\" and @timestamp >= \\\"now-70m\\\"\"}, \"filter\": [], \"indexRefName\": \"kibanaSavedObjectMeta.searchSourceJSON.index\"}"
+    },
+    "title": "[Tropobeat] CCI KPI: weather data",
+    "uiStateJSON": "{}",
+    "version": 1,
+    "visState": "{\"title\": \"[Tropobeat] CCI KPI: weather data\", \"type\": \"handlebars\", \"aggs\": [{\"id\": \"1\", \"enabled\": true, \"type\": \"max\", \"schema\": \"metric\", \"params\": {\"customLabel\": \"last poll\", \"field\": \"@timestamp\"}}, {\"id\": \"2\", \"enabled\": true, \"type\": \"cardinality\", \"schema\": \"metric\", \"params\": {\"customLabel\": \"paths\", \"field\": \"tropobeat.path_ids\"}}, {\"id\": \"3\", \"enabled\": true, \"type\": \"cardinality\", \"schema\": \"metric\", \"params\": {\"customLabel\": \"lrfs\", \"field\": \"tropobeat.lrf_codes\"}}], \"params\": {\"html\": \"<style>\\n.htmlVis:has(.tbk)>div{height:100%}\\n.tbk{box-sizing:border-box;height:100%;min-height:118px;justify-content:center;background:#0F1F2C;border:1px solid #22384A;border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;color:#E4EDF3;font-family:\\\"Inter\\\",\\\"Segoe UI\\\",system-ui,sans-serif;position:relative;overflow:hidden}\\n.tbk-label{font:600 14px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.08em;color:#8DA2B2}\\n.tbk-row{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}\\n.tbk-big{font-family:\\\"Barlow Condensed\\\",\\\"Roboto Condensed\\\",\\\"Arial Narrow\\\",sans-serif;font-stretch:condensed;font-weight:700;font-size:52px;line-height:1}\\n.tbk-unit{font-size:14px;color:#C3D1DB}\\n.tbk-sub{font-size:13px;color:#8DA2B2}\\n.tbk-m,.tbk-l{position:absolute;width:0;height:0;overflow:hidden}\\n.tbk6 .tbk-label{color:#6BD48A}</style><div class=\\\"tbk tbk6\\\"><div class=\\\"tbk-label\\\">WEATHER DATA</div>{{#if metrics.1.raw}}<div class=\\\"tbk-row\\\"><span class=\\\"tbk-big\\\">{{metrics.1.value}}</span><span class=\\\"tbk-unit\\\">paths at {{metrics.2.value}} LRFs</span></div><div class=\\\"tbk-sub\\\">Last poll {{metrics.0.value}}</div>{{else}}<div class=\\\"tbk-row\\\"><span class=\\\"tbk-big\\\" style=\\\"color:#E0A458\\\">0</span><span class=\\\"tbk-unit\\\">no weather poll in 70 min</span></div>{{/if}}</div>\", \"template\": \"{}\"}}"
+  },
+  "coreMigrationVersion": "8.8.0",
+  "id": "tropobeat-kpi-weather",
+  "managed": false,
+  "references": [
+    {
+      "id": "tropobeat-*",
+      "name": "kibanaSavedObjectMeta.searchSourceJSON.index",
+      "type": "index-pattern"
+    }
+  ],
+  "type": "visualization",
+  "typeMigrationVersion": "8.5.0"
+}

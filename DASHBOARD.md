@@ -1,10 +1,12 @@
 # Tropobeat dashboards
 
-Tropobeat ships three Kibana dashboards:
+Tropobeat ships five Kibana dashboards:
 
 - **[Tropobeat] Ducting Watch** shows tropobeat's ducting results. One LRF selector drives every panel: headline figures, a map of the paths that are ducting, heat maps of the network and of each path over the last 72 hours, where along a path the ducting is, and the duct detail behind it.
 - **[Tropobeat] Co-channel paths** checks that co-channel discovery has run. It puts every co-channel path, midpoint and transmitter from the latest discovery run on one map, together with every LRF.
 - **[Tropobeat] Correlation debug** shows how the correlation engine reached its verdicts: the latest verdict per LRF and channel, verdicts over time, the decision-trace reasons, each A/B pair decision with its explanation, MER and BER against their thresholds, and every trace record.
+- **[Tropobeat] CCI operations** is the operator's view of co-channel interference: headline figures, a map of open episodes with each likely interferer's path and station, a card per open episode, ducting and episodes by hour, episodes by region, verdicts by LRF hour by hour, the top likely interferers, episodes per day and data health.
+- **[Tropobeat] Episode timeline** shows how one episode was made: pick it from a list of the last 30 days, and every input report, hysteresis change, ducting lookup, weather poll and pair decision is laid out on one time axis, with the decision log beneath.
 
 What the states, scores and thresholds mean is in [DUCTING.md](DUCTING.md); the correlation verdicts and trace reasons are in [CORRELATION.md](CORRELATION.md). Ducting Watch repeats the essentials in its **Ducting reference** panel.
 
@@ -14,9 +16,11 @@ What the states, scores and thresholds mean is in [DUCTING.md](DUCTING.md); the 
 2. [Ducting Watch](#2-ducting-watch)
 3. [Co-channel paths](#3-co-channel-paths)
 4. [Correlation debug](#4-correlation-debug)
-5. [Colours](#5-colours)
-6. [Limitations](#6-limitations)
-7. [Changing the dashboards](#7-changing-the-dashboards)
+5. [CCI operations](#5-cci-operations)
+6. [Episode timeline](#6-episode-timeline)
+7. [Colours](#7-colours)
+8. [Limitations](#8-limitations)
+9. [Changing the dashboards](#9-changing-the-dashboards)
 
 ---
 
@@ -26,6 +30,7 @@ What the states, scores and thresholds mean is in [DUCTING.md](DUCTING.md); the 
 
 - Kibana 9.4 or later (built and tested on 9.4.2).
 - Tropobeat events in indices matching `tropobeat-*`.
+- For **CCI operations**, the Magnum Analytics visualizations plugin (inSITE's Kibana), whose Handlebars visualization draws the KPI tiles and the open-episode cards. Without it those panels show an error; the other panels still work. **Episode timeline** uses core Kibana only.
 - The LRF list loaded with `tropobeat insert lrfcoordinates` ([README](README.md#tropobeat-insert-lrfcoordinates-lrf-sites)). It creates `lrf-coordinates` in lookup mode, which the Ducting Watch network heat map joins for each LRF's city and state. An `lrf-coordinates` created by an earlier version isn't in lookup mode; recreate it once with `--recreate`.
 
 There are two ways to install the dashboards. Both create the same objects:
@@ -40,6 +45,14 @@ There are two ways to install the dashboards. Both create the same objects:
 | Dashboard **[Tropobeat] Correlation debug** | `tropobeat-correlation-debug` |
 | Markdown panel **[Tropobeat] Correlation reference** | `tropobeat-correlation-reference` |
 | Saved search **[Tropobeat] Correlation trace** | `tropobeat-correlation-trace` |
+| Dashboard **[Tropobeat] CCI operations** | `tropobeat-cci-operations` |
+| Map **[Tropobeat] CCI operations map** | `tropobeat-cci-operations-map` |
+| Handlebars **[Tropobeat] CCI KPI: …** (6 tiles) | `tropobeat-kpi-active-cci`, `tropobeat-kpi-needs-a-look`, `tropobeat-kpi-at-risk`, `tropobeat-kpi-episodes-24h`, `tropobeat-kpi-median-duration`, `tropobeat-kpi-weather` |
+| Handlebars **[Tropobeat] CCI open episodes** | `tropobeat-cci-open-episodes` |
+| Vega **[Tropobeat] CCI ops: …** (6 charts) | `tropobeat-ops-trends`, `tropobeat-ops-episodes-by-region`, `tropobeat-ops-verdict-heatmap`, `tropobeat-ops-top-interferers`, `tropobeat-ops-episodes-per-day`, `tropobeat-ops-data-health` |
+| Dashboard **[Tropobeat] Episode timeline** | `tropobeat-episode-timeline` |
+| Vega **[Tropobeat] Episodes: list, 30 days** and **timeline** | `tropobeat-episode-list`, `tropobeat-episode-timeline-lanes` |
+| Saved search **[Tropobeat] Episode decision log** | `tropobeat-episode-decision-log` |
 | Data view `tropobeat-*` | `tropobeat-*` |
 | Data view **LRF sites (tropobeat)** on `lrf-coordinates` | `tropobeat-lrf-coordinates` |
 
@@ -57,9 +70,9 @@ Installed packages carry the dashboards in tropobeat's `kibana` directory, where
   -E setup.dashboards.directory=_meta/kibana
 ```
 
-Add `-E setup.kibana.space.id=<space>` to load into a Kibana space other than the default. Loading again replaces the objects, so any changes made in Kibana are lost (see [Changing the dashboards](#7-changing-the-dashboards)). Setup also creates the `tropobeat-*` data view with every tropobeat field.
+Add `-E setup.kibana.space.id=<space>` to load into a Kibana space other than the default. Loading again replaces the objects, so any changes made in Kibana are lost (see [Changing the dashboards](#9-changing-the-dashboards)). Setup also creates the `tropobeat-*` data view with every tropobeat field. Kibana keeps a saved object's ID unique across spaces: loading into a second space gives the objects new IDs there, which the dashboards don't depend on.
 
-**By hand.** In Kibana, go to **Stack Management › Saved objects › Import** and choose `_meta/kibana/ducting-watch.ndjson`, `_meta/kibana/cochannel-paths.ndjson` or `_meta/kibana/correlation-debug.ndjson`. Each file holds one dashboard and everything it uses, including a minimal `tropobeat-*` data view; Kibana reads the fields from the index.
+**By hand.** In Kibana, go to **Stack Management › Saved objects › Import** and choose `_meta/kibana/ducting-watch.ndjson`, `_meta/kibana/cochannel-paths.ndjson`, `_meta/kibana/correlation-debug.ndjson`, `_meta/kibana/cci-operations.ndjson` or `_meta/kibana/episode-timeline.ndjson`. Each file holds one dashboard and everything it uses, including a minimal `tropobeat-*` data view; Kibana reads the fields from the index.
 
 ## 2. Ducting Watch
 
@@ -139,7 +152,52 @@ For checking and explaining the correlation engine: why a channel was or wasn't 
 
 The MER and BER panels and the `skip`, `ducting` and `sweep` records need their trace categories enabled; by default only `pair` and `hysteresis` are traced.
 
-## 5. Colours
+## 5. CCI operations
+
+For the operators watching for co-channel interference. It reads the `correlation` verdict events, the `weather` polls and `lrf-coordinates`. It opens on the last 24 hours and refreshes every minute. Times are in the browser's local time, which is Kibana's default (`dateFormat:tz` set to Browser).
+
+An episode is open while its latest event is under 6 minutes old and isn't a clear (an open episode publishes at least every 5 minutes). Channels are named by the station the LRF receives on them, with the LRF and RF channel beside it.
+
+### Panels
+
+| Panel | Shows |
+|---|---|
+| **KPI tiles** | Active CCI (channels and LRFs, trapping and ducting; the tile pulses while any CCI is open), needs a look (open episodes that aren't CCI, by verdict), at risk (LRFs and paths ducting or trapping in the latest weather poll), episodes in 24 hours, median and longest duration of the episodes that cleared, and the latest weather poll. |
+| **Map** | Every LRF, the paths ducting in the latest poll (faint), LRFs with ducting paths, open episodes coloured by verdict, and for each open CCI episode the likely interferer's path (red) and station (tower icon, with its call sign). |
+| **Open episodes** | A card per open episode, worst first: the station, LRF and channel, the verdict and strength, the likely interferer and its distance (or what to check when it isn't CCI), the power signature, the duration at the last event and the start. CCI cards pulse. |
+| **Ducting and episodes, by hour** | Paths ducting or trapping, and open episodes stacked by verdict, per hour over the dashboard's time range. |
+| **Episodes by region** | Episodes in the time range by ducting climate (Pacific coast, Mountain West, Interior, Great Lakes, Atlantic coast, Gulf coast) or by US time zone (click the toggle), with an outer ring splitting each region by peak verdict. The hover text says why ducting happens in each climate region. |
+| **Verdicts by LRF, hour by hour** | The worst verdict each LRF had in each hour, for the LRFs that had anything other than clear. |
+| **Top likely interferers, 7 days** | The stations named on confirmed-CCI events, by hours as the likely interferer. |
+| **Episodes per day, 14 days** | Episodes by the local day they started, today highlighted, against the average of the complete days. |
+| **Data health** | Correlation sweeps, the latest weather poll, baselines, co-channel discovery and paths without usable weather, each with a status dot. |
+
+### Using it
+
+- **Something is open.** The open-episode cards say which station and what to do: for CCI, the likely interferer and how far away it is; for the other verdicts, what to check. The map shows the interfering path and station.
+- **Is it seasonal or local?** **Episodes by region** and **Verdicts by LRF** show where episodes cluster; **Ducting and episodes, by hour** shows whether they follow the duct.
+- **To see how an episode was made**, open it in **Episode timeline**.
+
+## 6. Episode timeline
+
+For explaining one episode: what the telemetry reported, when each side became degraded, what the ducting was, and what the correlator decided, in order. It reads the `correlation` events, the `correlation_trace` records and the `weather` polls.
+
+### Panels
+
+| Panel | Shows |
+|---|---|
+| **Episodes, last 30 days** | Every episode, newest first, with open episodes pinned at the top. Each row: start, station with LRF and channel, peak verdict, duration, likely interferer, each side's card, frame and input, and the episode ID. Scroll with the mouse wheel or the scroll bar. **Click an episode** to point the whole dashboard at it. |
+| **Timeline** | One time axis from 5 minutes before the episode's start to 3 minutes after its clear: the verdict, the published events, each side's BER per report against its threshold (B1–B3 count the anomalous reports into degraded, C1–C3 the clean ones out), each side's state (counting, degraded, recovering, stressed, frame down), MER against its threshold, ducting (the correlator's lookups, and the strongest path's weather polls beneath), hysteresis changes and pair decisions. Hover anywhere for every value at that moment. |
+| **Episode decision log** | Every event and trace record of the episode, oldest first. |
+
+### Using it
+
+- **Clicking an episode** replaces the dashboard's filters with one for that LRF and channel and the episode's time window, and sets the time range to the same window. The window keeps the reports that led up to the episode, which carry no episode ID.
+- **Saturated BER** (the demod reports 16.777215 when it can't measure) is drawn as a full-height outlined bar marked SAT.
+- **Frame down** marks a side whose lock loss came with its whole frame unlocked: a frame or site problem the correlator doesn't count as signal degradation.
+- Decisions made within 5 seconds of each other belong to one sweep (the two sides' reports land moments apart); the timeline shows the last of them, and its tooltip names the one before. The decision log keeps them all.
+
+## 7. Colours
 
 | Level | State | Heat maps | Table cells |
 |---|---|---|---|
@@ -152,7 +210,7 @@ In the Ducting Watch table, the LRF, midpoint and transmitter score cells are co
 
 The 0.6 boundary in the table colours, the chart's reference line and the **Ducting reference** panel follow tropobeat's score bands. Update them if the bands are recalibrated ([rolling plan](ROLLING_PLAN.md#4-open-questions), Q16).
 
-## 6. Limitations
+## 8. Limitations
 
 - **The network heat map needs `lrf-coordinates` in lookup mode.** Otherwise the panel shows an error. `tropobeat insert lrfcoordinates` creates it that way; an older index needs `--recreate` once.
 - **The network heat map can't pick an LRF by clicking**, because its labels are built in the query and aren't a field. Use the **LRF** control. The path heat map can still pick a path by clicking.
@@ -161,9 +219,13 @@ The 0.6 boundary in the table colours, the chart's reference line and the **Duct
 - **Map layers draw up to 10,000 rows.** On the Co-channel paths map with every LRF in view, the full network may exceed that; pick an LRF.
 - **Time range and polling.** Ducting Watch opens on the last 2 hours. With hourly polls, a shorter range can briefly hold no poll, and the latest-poll panels go blank.
 - **MER and BER on Ducting Watch** are not shown yet; the Correlation debug dashboard shows them from the decision trace.
+- **CCI operations needs the Magnum Analytics plugin** for its KPI tiles and open-episode cards; without it those panels show an error.
+- **Episode timeline's per-report lanes need the `input` trace category**, and the ducting lookups need `ducting`; by default only `pair` and `hysteresis` are traced. Without them the BER, MER and state lanes fall back to the values on the episode's events (every 5 minutes) and say so. With `input` on, limit it to the LRFs of interest (`correlator.trace.lrf_sites`).
+- **Episode timeline's weather row** looks up to 3 hours back for the poll in force when the window opens, which covers hourly polls.
+- **Local time.** The Vega panels on CCI operations and Episode timeline use the browser's time zone. If Kibana's `dateFormat:tz` is set to a fixed zone, the other panels follow it and these don't.
 - **Correlation debug panels** query `tropobeat-*` with ES|QL, like Ducting Watch. The verdict heat map's columns widen with the time range (1 minute over the last hour, 30 minutes over a day), so a short episode can share a column with clear minutes; narrow the range to see it minute by minute.
 
-## 7. Changing the dashboards
+## 9. Changing the dashboards
 
 The repository holds the dashboards as Kibana saved objects under `_meta/kibana/7/` (one file per object, which `tropobeat setup` reads) and as one bundle per dashboard in `_meta/kibana/*.ndjson`. To change one:
 
